@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conecta com Expressões</title>
+<meta name="description" content="Jogo de tabuleiro de 6 × 6 a 9 × 9 baseado em lançamento de três dados e construção de expressões numéricas com duas operações.">
+<!-- Ícone da aba: a face 5 de um dado. O SVG vem primeiro, e é o que os
+     navegadores atuais escolhem — só ele acompanha o tema da barra de abas; o
+     PNG atende os que não aceitam ícone em SVG. -->
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png" sizes="32x32">
+<link rel="stylesheet" href="css/styles.css">
+<!-- No <head>, e não no fim do corpo: o tema tem de estar resolvido antes da
+     primeira pintura, senão um tema escuro salvo piscaria claro ao abrir. -->
+<script src="js/theme.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <h1>Conecta com Expressões</h1>
+    <p>Três dados, duas operações, quatro peças em linha.</p>
+  </div>
+
+  <div class="mode-switch" role="tablist" aria-label="Modo de jogo">
+    <button type="button" class="mode-btn is-active" data-mode="match" role="tab" aria-selected="true">Partida</button>
+    <button type="button" class="mode-btn" data-mode="practice" role="tab" aria-selected="false">Treino</button>
+  </div>
+
+  <nav class="topbar-actions" aria-label="Ações">
+    <button type="button" class="ghost-btn" data-dialog="rules">Regras</button>
+    <button type="button" class="ghost-btn" data-dialog="frequencies">Frequências</button>
+    <button type="button" class="ghost-btn" data-dialog="settings">Ajustes</button>
+    <!-- A palavra do botão vem do CSS, que reage a data-theme e por isso acerta
+         já na primeira pintura; game.js cuida do rótulo acessível. -->
+    <button type="button" class="ghost-btn theme-btn" id="btn-theme" aria-label="Mudar o tema"></button>
+  </nav>
+</header>
+
+<main class="layout">
+
+  <!-- ------------------------------------------------------------ tabuleiro -->
+  <section class="board-area" aria-labelledby="board-title">
+    <div class="board-head">
+      <h2 id="board-title">Tabuleiro 9 × 9</h2>
+      <p class="board-sub" id="board-sub">81 casas: 69 valores positivos, 11 negativos e o zero no centro.</p>
+    </div>
+
+    <!-- board-slot mede o espaço livre; board-frame vira um quadrado desse tamanho. -->
+    <div class="board-slot">
+      <div class="board-frame">
+        <div class="board" id="board" role="grid" aria-label="Tabuleiro do jogo, 9 linhas por 9 colunas"></div>
+      </div>
+    </div>
+
+    <ul class="legend">
+      <li><span class="swatch swatch--positive"></span>valor positivo</li>
+      <li><span class="swatch swatch--negative"></span>valor negativo</li>
+      <li><span class="swatch swatch--zero"></span>zero</li>
+      <li data-only="match"><span class="swatch swatch--p1"></span><span data-player-name="1">Jogador 1</span></li>
+      <li data-only="match"><span class="swatch swatch--p2"></span><span data-player-name="2">Jogador 2</span></li>
+      <li data-only="practice"><span class="swatch swatch--reachable"></span>casa alcançável</li>
+      <li data-only="practice"><span class="swatch swatch--marked"></span>casa conquistada</li>
+    </ul>
+  </section>
+
+  <!-- --------------------------------------------------------------- painel -->
+  <aside class="panel">
+
+    <!-- estado da partida -->
+    <section class="card turn-card" id="turn-card" data-only="match">
+      <div class="turn-players">
+        <div class="player-chip is-active" data-player="1">
+          <span class="piece piece--p1" aria-hidden="true"></span>
+          <span class="player-name" data-player-name="1">Jogador 1</span>
+          <span class="player-count" id="count-1">0</span>
+        </div>
+        <div class="player-chip" data-player="2">
+          <span class="piece piece--p2" aria-hidden="true"></span>
+          <span class="player-name" data-player-name="2">Jogador 2</span>
+          <span class="player-count" id="count-2">0</span>
+        </div>
+      </div>
+      <p class="turn-status" id="turn-status" role="status">Jogador 1 começa: role os dados.</p>
+    </section>
+
+    <!-- placar do treino -->
+    <section class="card practice-card" id="practice-card" data-only="practice">
+      <div class="practice-scores">
+        <div><strong id="practice-hits">0</strong><span>acertos</span></div>
+        <div><strong id="practice-misses">0</strong><span>erros</span></div>
+        <div><strong id="practice-marked">0</strong><span>casas conquistadas</span></div>
+      </div>
+      <p class="practice-target" id="practice-target" role="status">
+        Role os dados e explore quais casas você consegue alcançar.
+      </p>
+      <div class="practice-actions">
+        <button type="button" class="ghost-btn" id="btn-target">Sortear casa-alvo</button>
+        <button type="button" class="ghost-btn" id="btn-clear-marks">Limpar marcas</button>
+      </div>
+    </section>
+
+    <!-- dados -->
+    <section class="card dice-card" aria-labelledby="dice-title">
+      <div class="card-head">
+        <h2 id="dice-title">Dados</h2>
+        <span class="timer" id="timer" role="timer" aria-live="off" hidden>0:00</span>
+        <span class="attempts" id="attempts" data-only="match" aria-live="polite"></span>
+      </div>
+      <div class="dice" id="dice" aria-live="polite"></div>
+      <div class="timer-bar" id="timer-bar" hidden><span id="timer-fill"></span></div>
+      <button type="button" class="primary-btn" id="btn-roll">Rolar os dados</button>
+    </section>
+
+    <!-- construtor da expressão -->
+    <section class="card builder-card" aria-labelledby="builder-title">
+      <div class="card-head">
+        <h2 id="builder-title">Sua expressão</h2>
+        <button type="button" class="link-btn" id="btn-possibilities" data-only="practice">Ver possibilidades</button>
+      </div>
+
+      <fieldset class="grouping" disabled>
+        <legend>Agrupamento</legend>
+        <label class="grouping-opt">
+          <input type="radio" name="grouping" value="L" checked>
+          <span>( <em>a</em> ∘ <em>b</em> ) ∘ <em>c</em></span>
+        </label>
+        <label class="grouping-opt">
+          <input type="radio" name="grouping" value="R">
+          <span><em>a</em> ∘ ( <em>b</em> ∘ <em>c</em> )</span>
+        </label>
+      </fieldset>
+
+      <div class="expression" id="expression" aria-label="Expressão em construção"></div>
+      <p class="swap-hint" id="swap-hint">Clique em dois dados da expressão para trocá-los de lugar.</p>
+
+      <div class="op-picker">
+        <div class="op-group" data-slot="1">
+          <span class="op-label">Operação 1</span>
+          <div class="op-buttons" id="ops-1" role="group" aria-label="Primeira operação"></div>
+        </div>
+        <div class="op-group" data-slot="2">
+          <span class="op-label">Operação 2</span>
+          <div class="op-buttons" id="ops-2" role="group" aria-label="Segunda operação"></div>
+        </div>
+      </div>
+
+      <form class="answer-row" id="answer-form" autocomplete="off">
+        <label for="answer">Resultado</label>
+        <input type="text" id="answer" inputmode="text" placeholder="?" aria-describedby="feedback" disabled>
+        <!-- Em telas de toque o resultado é escolhido aqui, entre as casas livres,
+             em vez de digitado: o teclado virtual esconderia o tabuleiro. -->
+        <select id="answer-select" aria-label="Resultado" aria-describedby="feedback" disabled hidden></select>
+        <button type="submit" class="primary-btn" id="btn-check" disabled>Conferir</button>
+      </form>
+
+      <div class="feedback" id="feedback" role="status" aria-live="polite"></div>
+
+      <div class="turn-end" id="turn-end" hidden>
+        <button type="button" class="ghost-btn" id="btn-reveal">Ver o que era possível</button>
+        <button type="button" class="primary-btn" id="btn-pass">Passar a vez</button>
+      </div>
+    </section>
+
+    <!-- histórico -->
+    <section class="card log-card" aria-labelledby="log-title">
+      <div class="card-head">
+        <h2 id="log-title">Registro das jogadas</h2>
+        <button type="button" class="link-btn" id="btn-copy-log">Copiar</button>
+      </div>
+      <ol class="log" id="log"><li class="log-empty">Nenhuma jogada registrada.</li></ol>
+    </section>
+
+  </aside>
+</main>
+
+<footer class="credit">
+  Desenvolvido por
+  <a href="https://www.linkedin.com/in/guilherme-perroni/" target="_blank" rel="noopener noreferrer">Guilherme Gaspar Perroni</a>
+</footer>
+
+<!-- ------------------------------------------------------------------ modais -->
+
+<dialog class="modal" id="dialog-rules">
+  <form method="dialog" class="modal-head">
+    <h2>Regras</h2>
+    <button class="icon-btn" aria-label="Fechar">✕</button>
+  </form>
+  <div class="modal-body">
+    <h3>Objetivo</h3>
+    <p>Formar uma sequência de <strong>quatro peças da mesma cor</strong> — na horizontal, na vertical ou na
+       diagonal. Para colocar uma peça, é preciso construir uma expressão numérica cujo resultado seja o
+       número de uma casa livre.</p>
+
+    <h3>Uma jogada</h3>
+    <ol>
+      <li>Lance os três dados e obtenha os valores <em>a</em>, <em>b</em> e <em>c</em>. Os três devem ser
+          usados uma única vez.</li>
+      <li>Escolha <strong>duas operações</strong> entre + − × ÷ ^ (podem ser iguais) e uma das duas formas de
+          agrupamento: ( <em>a</em> ∘ <em>b</em> ) ∘ <em>c</em> ou <em>a</em> ∘ ( <em>b</em> ∘ <em>c</em> ).</li>
+      <li>Calcule o resultado e digite-o — em telas de toque, escolha-o na lista das casas livres. Se estiver
+          certo e a casa correspondente estiver livre, sua peça é colocada nela.</li>
+    </ol>
+    <p>Se nenhuma expressão possível com os dados sorteados alcança uma casa livre, a rolagem não vale:
+       o jogador rola de novo, quantas vezes for preciso, sem perder a vez nem gastar tentativa.</p>
+
+    <h3>As três tentativas</h3>
+    <p>Cada turno dá <strong>três tentativas</strong> com a mesma rolagem. Uma tentativa é consumida quando:</p>
+    <ul>
+      <li>o resultado digitado não é o valor da expressão construída;</li>
+      <li>a expressão não está definida (divisão por zero, por exemplo);</li>
+      <li>o resultado está correto, mas não existe casa com aquele valor;</li>
+      <li>o resultado está correto, mas a casa já está ocupada.</li>
+    </ul>
+    <p>Esgotadas as três tentativas, o turno passa ao adversário sem que nenhuma peça seja colocada. Escolher
+       operações ou digitar um valor incompleto não consome tentativa.</p>
+
+    <h3>O cronômetro</h3>
+    <p>O tempo do turno começa a contar quando os dados param e vale para as três tentativas juntas. Ele pausa
+       enquanto qualquer janela está aberta — consultar as regras não custa tempo. Se o tempo acabar, o turno
+       passa sem peça, como se as tentativas tivessem se esgotado. A duração — 30, 60 ou 90 segundos — fica
+       em <em>Ajustes</em>.</p>
+
+    <h3>Expressões definidas</h3>
+    <p>Não são permitidas divisões por zero. A potenciação exige expoente inteiro: 2 ^ (5 ÷ 2) não é uma
+       jogada válida. Resultados não inteiros, como 5 ÷ 2, são cálculos corretos, mas não correspondem a
+       nenhuma casa.</p>
+
+    <h3>Fim da partida</h3>
+    <p>Vence quem primeiro formar uma sequência de quatro peças; se uma jogada fechar mais de uma sequência,
+       todas valem. Se todas as casas forem preenchidas sem nenhuma sequência, a partida termina empatada.</p>
+
+    <h3>Tamanho do tabuleiro</h3>
+    <p>O tabuleiro do artigo é 9 × 9. Em <em>Ajustes</em> ele pode ser reduzido até 6 × 6: os tamanhos menores
+       são recortes centrados da mesma figura, mantendo o zero e valores distintos, com menos casas para
+       encontrar. A sequência para vencer continua sendo de quatro peças, o que torna as partidas menores bem
+       mais rápidas.</p>
+
+    <h3>Modo Treino</h3>
+    <p>No Treino não há adversário nem limite de tentativas: o tabuleiro destaca as casas alcançáveis com a
+       rolagem atual, o valor exato da sua expressão é sempre mostrado e você pode sortear uma casa-alvo para
+       praticar a análise inversa — <em>quais operações levam a este número?</em></p>
+  </div>
+</dialog>
+
+<dialog class="modal" id="dialog-frequencies">
+  <form method="dialog" class="modal-head">
+    <h2>Levantamento das expressões</h2>
+    <button class="icon-btn" aria-label="Fechar">✕</button>
+  </form>
+  <div class="modal-body">
+    <p id="freq-summary" class="freq-summary"></p>
+    <p class="freq-note">Enumeração das 216 triplas ordenadas de dados × 25 pares de operações × 2
+       agrupamentos, com aritmética exata de frações. A frequência conta expressões, não valores distintos:
+       expressões diferentes que produzem o mesmo resultado são contadas individualmente.</p>
+    <div class="freq-tables">
+      <div>
+        <h3>Positivos mais frequentes</h3>
+        <table class="freq-table" id="freq-positive"></table>
+      </div>
+      <div>
+        <h3>Negativos mais frequentes</h3>
+        <table class="freq-table" id="freq-negative"></table>
+      </div>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="modal" id="dialog-settings">
+  <form method="dialog" class="modal-head">
+    <h2>Ajustes</h2>
+    <button class="icon-btn" aria-label="Fechar">✕</button>
+  </form>
+  <div class="modal-body">
+    <div class="setting">
+      <label for="set-board-size">Tamanho do tabuleiro</label>
+      <select id="set-board-size">
+        <option value="6">6 × 6 — 36 casas</option>
+        <option value="7">7 × 7 — 49 casas</option>
+        <option value="8">8 × 8 — 64 casas</option>
+        <option value="9" selected>9 × 9 — 81 casas (artigo)</option>
+      </select>
+      <p class="setting-note">Tabuleiros menores são recortes centrados da figura do artigo, sempre com o
+         zero. A sequência para vencer continua sendo de quatro peças. Trocar o tamanho reinicia a partida.</p>
+    </div>
+
+    <div class="setting">
+      <label for="set-attempts">Tentativas por turno</label>
+      <select id="set-attempts">
+        <option value="1">1 tentativa</option>
+        <option value="2">2 tentativas</option>
+        <option value="3" selected>3 tentativas</option>
+      </select>
+      <p class="setting-note">O padrão são três tentativas por rolagem.</p>
+    </div>
+
+    <div class="setting">
+      <label for="set-timer">Tempo por turno</label>
+      <select id="set-timer">
+        <option value="30">30 segundos</option>
+        <option value="60">60 segundos</option>
+        <option value="90" selected>90 segundos</option>
+      </select>
+      <p class="setting-note">O cronômetro começa quando os dados param e pausa enquanto uma janela está
+         aberta. Esgotado o tempo, o turno passa sem peça. No Treino ele apenas marca o tempo decorrido,
+         sem encerrar nada.</p>
+    </div>
+
+    <div class="setting">
+      <label class="check"><input type="checkbox" id="set-reorder" checked> Permitir usar os dados em qualquer ordem</label>
+      <p class="setting-note">Com a opção desmarcada, os valores entram na expressão na ordem sorteada, como
+         na enumeração do artigo. Marcada, os três dados podem ser rearranjados na mesa.</p>
+    </div>
+
+    <div class="setting">
+      <label class="check"><input type="checkbox" id="set-highlight"> Destacar casas alcançáveis na Partida</label>
+      <p class="setting-note">Mediação para turmas iniciantes. No Treino o destaque está sempre ativo.</p>
+    </div>
+
+    <div class="setting">
+      <label for="set-theme">Tema</label>
+      <select id="set-theme">
+        <option value="auto" selected>Automático — segue o sistema</option>
+        <option value="light">Claro</option>
+        <option value="dark">Escuro</option>
+      </select>
+      <p class="setting-note">No automático o tema acompanha a preferência do sistema, mesmo que ela mude
+         com a página aberta. O botão no alto da tela fixa um dos dois.</p>
+    </div>
+
+    <div class="setting">
+      <label for="set-name-1">Nome do jogador 1</label>
+      <input type="text" id="set-name-1" maxlength="18" placeholder="Jogador 1">
+    </div>
+    <div class="setting">
+      <label for="set-name-2">Nome do jogador 2</label>
+      <input type="text" id="set-name-2" maxlength="18" placeholder="Jogador 2">
+    </div>
+
+    <div class="setting">
+      <button type="button" class="ghost-btn danger" id="btn-restart">Reiniciar partida</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="modal" id="dialog-possibilities">
+  <form method="dialog" class="modal-head">
+    <h2>Possibilidades desta rolagem</h2>
+    <button class="icon-btn" aria-label="Fechar">✕</button>
+  </form>
+  <div class="modal-body">
+    <p id="poss-summary" class="freq-summary"></p>
+    <div id="poss-list" class="poss-list"></div>
+  </div>
+</dialog>
+
+<dialog class="modal modal--result" id="dialog-result">
+  <div class="modal-body result-body">
+    <p class="result-kicker" id="result-kicker">Fim de partida</p>
+    <h2 id="result-title">Vitória!</h2>
+    <p id="result-detail"></p>
+    <div class="result-actions">
+      <button type="button" class="ghost-btn" id="btn-result-close">Ver o tabuleiro</button>
+      <button type="button" class="primary-btn" id="btn-result-restart">Nova partida</button>
+    </div>
+  </div>
+</dialog>
+
+<script src="js/engine.js"></script>
+<script src="js/board.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
