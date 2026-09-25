@@ -205,18 +205,26 @@
       'ainda parado em ' + paused);
 
     // tempo esgotado encerra o turno
-    setOnChange('#set-timer', 5);
+    ok('o tempo só oferece 30, 60 ou 90 segundos',
+      $$('#set-timer option').map(function (o) { return o.value; }).join(',') === '30,60,90',
+      $$('#set-timer option').map(function (o) { return o.value; }).join(','));
+    ok('as tentativas só oferecem 1, 2 ou 3',
+      $$('#set-attempts option').map(function (o) { return o.value; }).join(',') === '1,2,3',
+      $$('#set-attempts option').map(function (o) { return o.value; }).join(','));
+    setOnChange('#set-timer', 30);
     await sleep(600);
-    ok('limite curto reinicia a contagem', $('#timer').textContent === '0:05', $('#timer').textContent);
-    await sleep(6000);
+    ok('limite curto reinicia a contagem', $('#timer').textContent === '0:30', $('#timer').textContent);
+    await sleep(31000);
     ok('tempo esgotado encerra o turno', $('#turn-end').hidden === false, 'turno segue aberto');
     ok('mensagem avisa do tempo esgotado', /Tempo esgotado/.test(feedbackText()), feedbackText());
     ok('registro anota o tempo esgotado', /tempo esgotado/.test($('#log').textContent), $('#log').textContent);
     ok('cronômetro zerado ao esgotar', $('#timer').textContent === '0:00', $('#timer').textContent);
 
-    setOnChange('#set-timer', 0);
+    setOnChange('#set-timer', 90);
     await sleep(30);
-    ok('limite zero esconde o cronômetro', $('#timer').hidden === true, 'visível');
+    ok('a preferência de tempo é guardada',
+      /"turnSeconds":90/.test(localStorage.getItem('conecta-com-expressoes:ajustes') || ''),
+      localStorage.getItem('conecta-com-expressoes:ajustes') || 'sem ajustes');
     $('#btn-pass').click();
     await sleep(60);
 
@@ -343,6 +351,105 @@
     pickOp(2, '×');
     answer('27');            // 27 existe no 9 × 9, mas não no recorte 6 × 6
     ok('valor fora do recorte não tem casa', /não existe casa/.test(feedbackText()), feedbackText());
+    pickOp(1, '+');
+    pickOp(2, '+');
+    answer('9');             // (3 + 3) + 3 = 9 fecha o turno do jogador 2
+    await sleep(60);
+
+    // ------------------------------------------------ rolagem sem saída
+    /* Com 1·1·1 só se chega a 0, 1, 2 e 3. Ocupadas essas quatro casas, a
+       rolagem não tem saída — e a regra manda rolar de novo, não passar a vez. */
+    await play([1, 1, 1], 'L', '+', '+', '3');   // J1
+    await play([1, 1, 1], 'L', '+', '×', '2');   // J2
+    await play([1, 1, 1], 'L', '×', '×', '1');   // J1
+    await play([1, 1, 1], 'L', '−', '×', '0');   // J2
+    ok('as quatro casas alcançáveis com 1·1·1 estão ocupadas',
+      [0, 1, 2, 3].every(function (v) { return cellOf(v).classList.contains('is-taken'); }), 'alguma livre');
+    ok('vez do jogador 1 antes da rolagem sem saída', /Jogador 1/.test($('#turn-status').textContent),
+      $('#turn-status').textContent);
+
+    await roll(1, 1, 1);
+    ok('rolagem sem saída não encerra o turno', $('#turn-end').hidden === true, 'fim de turno à vista');
+    ok('rolagem sem saída não passa a vez', /Jogador 1/.test($('#turn-status').textContent),
+      $('#turn-status').textContent);
+    ok('rolagem sem saída libera rolar de novo', $('#btn-roll').disabled === false, 'bloqueada');
+    ok('botão convida a rolar novamente', $('#btn-roll').textContent === 'Rolar novamente',
+      $('#btn-roll').textContent);
+    ok('aviso pede nova rolagem', /Role os dados novamente/.test(feedbackText()), feedbackText());
+    ok('campo de resposta segue bloqueado', $('#answer').disabled === true, 'liberado');
+    ok('sem tentativas a mostrar na rolagem sem saída', $$('.attempt-dot').length === 0,
+      $$('.attempt-dot').length + ' pontos');
+    ok('registro anota a rolagem sem saída', /nenhuma jogada possível/.test($('#log').textContent),
+      $('#log').textContent);
+    ok('nenhuma peça a mais', $$('.cell.is-taken').length === 6, $$('.cell.is-taken').length + '');
+
+    await play([2, 3, 4], 'L', '+', '×', '20');  // J1 joga na nova rolagem
+    ok('a nova rolagem do mesmo jogador vale', cellOf(20).dataset.owner === '1', cellOf(20).className);
+    ok('depois dela a vez passa normalmente', /Jogador 2/.test($('#turn-status').textContent),
+      $('#turn-status').textContent);
+
+    // ------------------------------------------------ lista em telas de toque
+    /* A página pergunta ao navegador se o ponteiro é grosso (toque). Aqui a
+       resposta é forjada para ver a lista sem um tablet de verdade. */
+    var realMatchMedia = window.matchMedia;
+    window.matchMedia = function (query) {
+      if (query === '(pointer: coarse)') {
+        return { matches: true, media: query, addEventListener: function () {}, addListener: function () {} };
+      }
+      return realMatchMedia.call(window, query);
+    };
+    function listValues() {
+      return $$('#answer-select option').map(function (o) { return o.value; })
+        .filter(function (v) { return v !== ''; });
+    }
+
+    await roll(2, 3, 4);                          // J2
+    var select = $('#answer-select');
+    ok('em tela de toque a lista aparece', select.hidden === false && select.disabled === false,
+      'oculta ou bloqueada');
+    ok('em tela de toque o campo de texto some', $('#answer').hidden === true, 'visível');
+    ok('o campo de texto não recebe foco no toque', document.activeElement !== $('#answer'),
+      'campo focado');
+    var taken = $$('.cell.is-taken').map(function (c) { return c.dataset.value; });
+    ok('a lista traz só casas livres', listValues().length === 36 - taken.length &&
+      listValues().every(function (v) { return taken.indexOf(v) === -1; }),
+      listValues().length + ' itens, ocupadas: ' + taken.join(','));
+    ok('a lista exclui a casa ocupada 20', listValues().indexOf('20') === -1, listValues().join(','));
+    ok('a lista traz uma casa livre negativa', listValues().indexOf('-8') !== -1, listValues().join(','));
+    ok('a lista está em ordem crescente', listValues().every(function (v, i, all) {
+      return i === 0 || Number(all[i - 1]) < Number(v);
+    }), listValues().join(','));
+    ok('a lista só tem o convite e as casas livres',
+      $$('#answer-select option').length === listValues().length + 1, $$('#answer-select option').length + ' itens');
+
+    pickGrouping('L');
+    pickOp(1, '×');
+    pickOp(2, '+');
+    click('#btn-check');
+    ok('sem escolha, o aviso fala da lista', /Escolha na lista/.test(feedbackText()), feedbackText());
+    ok('conferir sem escolha não consome tentativa', spentAttempts() === 0, spentAttempts() + ' gastas');
+    select.value = '10';                          // (2 × 3) + 4 = 10
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    click('#btn-check');
+    await sleep(60);
+    ok('o valor escolhido na lista é conferido', cellOf(10).dataset.owner === '2', cellOf(10).className);
+
+    await roll(2, 3, 4);                          // J1
+    ok('a lista volta a cada rolagem', $('#answer-select').hidden === false, 'oculta');
+    ok('a lista já exclui a casa 10 recém-ocupada', listValues().indexOf('10') === -1, listValues().join(','));
+    pickGrouping('L');
+    pickOp(1, '^');
+    pickOp(2, '+');
+    $('#answer-select').value = '12';             // (2 ^ 3) + 4 = 12
+    $('#answer-select').dispatchEvent(new Event('change', { bubbles: true }));
+    click('#btn-check');
+    await sleep(60);
+    ok('outra escolha na lista vale', cellOf(12).dataset.owner === '1', cellOf(12).className);
+    window.matchMedia = realMatchMedia;
+
+    await roll(2, 3, 4);                          // J2, de volta ao ponteiro fino
+    ok('com ponteiro fino o campo de texto volta', $('#answer').hidden === false && $('#answer-select').hidden === true,
+      'lista à vista');
 
     setOnChange('#set-board-size', 9);
     await sleep(60);
