@@ -3,7 +3,8 @@
  *
  * Dois modos compartilham o mesmo tabuleiro e o mesmo construtor de expressões:
  *   • Partida — dois jogadores alternam turnos, cada rolagem dá três tentativas
- *     e a expressão é conferida sem que o valor seja revelado;
+ *     e a expressão é conferida sem que o valor seja revelado; uma rolagem que
+ *     não alcança casa livre é refeita, sem perda da vez;
  *   • Treino — um jogador, tentativas ilimitadas, casas alcançáveis destacadas,
  *     valor exato sempre mostrado e sorteio de casa-alvo para a análise inversa.
  */
@@ -20,9 +21,9 @@
     mode: 'match',
     phase: 'idle',          // idle | building | turnEnd | over
     settings: {
-      attempts: 3,
+      attempts: 3,            // 1, 2 ou 3
       boardSize: Board.MAX_SIZE,
-      turnSeconds: 90,        // 0 desliga o cronômetro
+      turnSeconds: 90,        // 30, 60 ou 90
       allowReorder: true,
       highlightInMatch: false,
       theme: 'auto',            // 'auto' segue o sistema; 'light' e 'dark' fixam
@@ -38,6 +39,7 @@
     op2: null,
     grouping: GROUPING.LEFT,
     attemptsLeft: 3,
+    answerMode: 'type',     // 'type' digita o resultado; 'list' escolhe numa lista (toque)
     reach: new Map(),       // inteiro alcançável → expressão de exemplo
     winCells: [],
     result: null,           // {type: 'win' | 'draw', player}
@@ -60,7 +62,7 @@
 
   function cacheElements() {
     ['board', 'dice', 'btn-roll', 'expression', 'swap-hint', 'ops-1', 'ops-2', 'answer',
-     'answer-form', 'btn-check', 'feedback', 'attempts', 'turn-status', 'turn-end',
+     'answer-select', 'answer-form', 'btn-check', 'feedback', 'attempts', 'turn-status', 'turn-end',
      'btn-reveal', 'btn-pass', 'count-1', 'count-2', 'log', 'btn-copy-log',
      'practice-hits', 'practice-misses', 'practice-marked', 'practice-target',
      'btn-target', 'btn-clear-marks', 'btn-possibilities', 'poss-list', 'poss-summary',
@@ -311,6 +313,7 @@
     renderLog();
     renderPracticePanel();
     renderControls();
+    renderAnswerField();
     renderTheme();
     scheduleFit();
   }
@@ -435,7 +438,9 @@
   function renderAttempts() {
     var host = el.attempts;
     host.textContent = '';
-    if (isPractice() || !state.dice || state.phase === 'over') return;
+    // Em 'idle' com dados na mesa a rolagem foi sem saída e vai ser refeita:
+    // não há tentativas a mostrar.
+    if (isPractice() || !state.dice || state.phase === 'over' || state.phase === 'idle') return;
     var label = document.createElement('span');
     label.className = 'attempts-label';
     label.textContent = 'tentativas';
@@ -456,7 +461,11 @@
         : 'Partida encerrada: ' + nameOf(state.current) + ' formou quatro peças em linha.';
       return;
     }
-    if (state.phase === 'idle') text = 'Vez de ' + nameOf(state.current) + ': role os dados.';
+    if (state.phase === 'idle') {
+      text = 'Vez de ' + nameOf(state.current) + (state.dice
+        ? ': a rolagem não abriu casa livre, role os dados novamente.'
+        : ': role os dados.');
+    }
     else if (state.phase === 'turnEnd') text = 'Turno encerrado. Passe a vez para ' + nameOf(other(state.current)) + '.';
     else text = 'Vez de ' + nameOf(state.current) + ': construa a expressão e confira o resultado.';
     el['turn-status'].textContent = text;
@@ -495,7 +504,9 @@
     // Na Partida cada turno tem uma única rolagem: o botão só volta a valer no
     // turno seguinte. No Treino a rolagem é livre.
     el['btn-roll'].disabled = isPractice() ? state.phase === 'over' : state.phase !== 'idle';
-    el['btn-roll'].textContent = isPractice() && state.dice ? 'Rolar novamente' : 'Rolar os dados';
+    // "Rolar novamente" no Treino e na Partida quando a rolagem foi sem saída.
+    el['btn-roll'].textContent = state.dice && (isPractice() || state.phase === 'idle')
+      ? 'Rolar novamente' : 'Rolar os dados';
 
     el.answer.disabled = !rolling;
     el['btn-check'].disabled = !rolling;
@@ -726,15 +737,18 @@
     state.attemptsLeft = state.settings.attempts;
     state.reach = Engine.reachableIntegers(state.dice, state.settings.allowReorder);
     state.phase = 'building';
+    state.answerMode = prefersList() ? 'list' : 'type';
     el.answer.value = '';
     clearSay();
 
     var playable = playableValues();
     if (!isPractice() && playable.size === 0) {
-      state.phase = 'turnEnd';
+      // Rolagem sem saída: nenhuma expressão chega a uma casa livre. O jogador
+      // não perde a vez — volta a 'idle' e rola de novo, quantas vezes preciso.
+      state.phase = 'idle';
       say('Nenhuma expressão construída com <strong>' + faces.join(', ') +
-          '</strong> alcança uma casa livre. Pela regra, o turno passa sem jogada.', 'warn');
-      addLog('Dados ' + faces.join('·') + ' — nenhuma jogada possível', 'sem peça', state.current);
+          '</strong> alcança uma casa livre. Role os dados novamente: a vez continua sua.', 'warn');
+      addLog('Dados ' + faces.join('·') + ' — nenhuma jogada possível', 'nova rolagem', state.current);
     } else if (isPractice()) {
       say('Dados: <strong>' + faces.join(' · ') + '</strong>. ' + playable.size +
           ' casa(s) destacada(s) podem ser alcançadas.', null);
@@ -743,7 +757,61 @@
     if (state.phase === 'building') startTimer(); else stopTimer();
 
     render();
-    if (state.phase === 'building') el.answer.focus();
+    // Só o campo de texto recebe foco: numa tela de toque isso chamaria o
+    // teclado virtual, e ali o resultado é escolhido na lista.
+    if (state.phase === 'building' && state.answerMode === 'type') el.answer.focus();
+  }
+
+  // ------------------------------------------------------ campo de resposta
+
+  /*
+   * Em telas de toque, digitar o resultado chama o teclado virtual, que cobre
+   * metade da tela e esconde o tabuleiro. Ali o resultado é escolhido numa
+   * lista com os valores das casas ainda livres — só as que existem no
+   * tabuleiro e ainda não têm peça. No computador continua a digitação.
+   */
+  function prefersList() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  }
+
+  /** Valores das casas ainda livres, em ordem crescente. */
+  function freeBoardValues() {
+    var out = [];
+    for (var r = 0; r < Board.SIZE; r++) {
+      for (var c = 0; c < Board.SIZE; c++) {
+        var free = isPractice() ? !state.marks.has(key(r, c)) : Board.isFree(state.board, r, c);
+        if (free) out.push(Board.valueAt(r, c));
+      }
+    }
+    return out.sort(function (a, b) { return a - b; });
+  }
+
+  function renderAnswerField() {
+    var select = el['answer-select'];
+    var list = state.answerMode === 'list' && state.phase === 'building';
+    el.answer.hidden = list;
+    select.hidden = !list;
+    select.disabled = !list;
+    if (!list) return;
+
+    var previous = select.value;
+    select.textContent = '';
+    var placeholder = new Option('Escolha o resultado…', '', true, true);
+    placeholder.disabled = true;
+    select.appendChild(placeholder);
+    freeBoardValues().forEach(function (value) {
+      select.appendChild(new Option(String(value), String(value)));
+    });
+
+    var stillThere = previous !== '' && Array.prototype.some.call(select.options, function (option) {
+      return option.value === previous;
+    });
+    if (stillThere) select.value = previous;
+  }
+
+  /** A lista escreve no mesmo campo que a digitação: onSubmit lê um só lugar. */
+  function onAnswerSelect() {
+    el.answer.value = el['answer-select'].value;
   }
 
   // ---------------------------------------------- construção da expressão
@@ -789,7 +857,9 @@
 
     var typed = Engine.parseAnswer(el.answer.value);
     if (!typed) {
-      say('Digite o resultado da sua expressão — um inteiro como <strong>-7</strong>, ou uma fração como <strong>5/2</strong>.', 'warn');
+      say(state.answerMode === 'list'
+        ? 'Escolha na lista o resultado da sua expressão.'
+        : 'Digite o resultado da sua expressão — um inteiro como <strong>-7</strong>, ou uma fração como <strong>5/2</strong>.', 'warn');
       return;
     }
 
@@ -868,7 +938,7 @@
         ? 'Resta 1 tentativa neste turno.'
         : 'Restam ' + state.attemptsLeft + ' tentativas neste turno.');
       renderAttempts();
-      el.answer.select();
+      if (state.answerMode === 'type') el.answer.select();
       return;
     }
 
@@ -965,7 +1035,7 @@
     addLog(expressionText + ' = ' + value, 'treino', null);
     if (target !== null) state.practice.target = null;
     render();
-    el.answer.select();
+    if (state.answerMode === 'type') el.answer.select();
   }
 
   function drawTarget() {
@@ -1108,7 +1178,7 @@
     try {
       var saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
       if (saved) {
-        if (saved.attempts) state.settings.attempts = saved.attempts;
+        if (saved.attempts) state.settings.attempts = clampAttempts(saved.attempts);
         if (saved.boardSize) state.settings.boardSize = Board.clampSize(saved.boardSize);
         if (typeof saved.turnSeconds === 'number') state.settings.turnSeconds = clampSeconds(saved.turnSeconds);
         if (typeof saved.allowReorder === 'boolean') state.settings.allowReorder = saved.allowReorder;
@@ -1143,15 +1213,27 @@
     catch (error) { /* armazenamento indisponível: ajustes valem só nesta sessão */ }
   }
 
-  /** Segundos por turno; 0 desliga o cronômetro. */
-  function clampSeconds(value) {
-    var seconds = Math.round(Number(value));
-    if (!isFinite(seconds) || seconds <= 0) return 0;
-    return Math.max(5, Math.min(600, seconds));
+  /*
+   * Os dois ajustes numéricos são listas fechadas: 1 a 3 tentativas e 30, 60
+   * ou 90 segundos. Um valor guardado por uma versão anterior (ou digitado à
+   * mão no armazenamento) cai na opção válida mais próxima.
+   */
+  var ATTEMPT_OPTIONS = [1, 2, 3];
+  var SECOND_OPTIONS = [30, 60, 90];
+
+  function nearest(options, value, fallback) {
+    var n = Number(value);
+    if (!isFinite(n)) return fallback;
+    return options.reduce(function (best, option) {
+      return Math.abs(option - n) < Math.abs(best - n) ? option : best;
+    });
   }
 
+  function clampAttempts(value) { return nearest(ATTEMPT_OPTIONS, value, 3); }
+  function clampSeconds(value) { return nearest(SECOND_OPTIONS, value, 90); }
+
   function onSettingsChange() {
-    var attempts = Math.max(1, Math.min(9, Number(el['set-attempts'].value) || 3));
+    var attempts = clampAttempts(el['set-attempts'].value);
     el['set-attempts'].value = attempts;
     var seconds = clampSeconds(el['set-timer'].value);
     var size = Board.clampSize(el['set-board-size'].value);
@@ -1188,12 +1270,8 @@
       state.reach = Engine.reachableIntegers(state.dice, state.settings.allowReorder);
     }
 
-    // O novo limite de tempo vale já para o turno em curso. Desligar o
-    // cronômetro o esconde mesmo com o turno encerrado pelo relógio.
-    if (secondsChanged) {
-      if (seconds === 0 && !isPractice()) stopTimer();
-      else if (state.phase === 'building') startTimer();
-    }
+    // O novo limite de tempo vale já para o turno em curso.
+    if (secondsChanged && state.phase === 'building') startTimer();
 
     render();
   }
@@ -1267,6 +1345,7 @@
   function wireEvents() {
     el['btn-roll'].addEventListener('click', rollDice);
     el['answer-form'].addEventListener('submit', onSubmit);
+    el['answer-select'].addEventListener('change', onAnswerSelect);
     el['btn-pass'].addEventListener('click', nextTurn);
     el['btn-reveal'].addEventListener('click', showPossibilities);
     el['btn-possibilities'].addEventListener('click', showPossibilities);

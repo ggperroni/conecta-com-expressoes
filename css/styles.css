@@ -796,7 +796,7 @@ h1, h2, h3 { margin: 0; line-height: 1.25; }
   color: var(--ink-faint);
 }
 
-.answer-row input {
+.answer-row input, .answer-row select {
   font: inherit;
   font-size: 20px;
   font-weight: 700;
@@ -810,7 +810,8 @@ h1, h2, h3 { margin: 0; line-height: 1.25; }
   min-width: 0;
 }
 
-.answer-row input:disabled { background: var(--field-off); }
+.answer-row input:disabled, .answer-row select:disabled { background: var(--field-off); }
+.answer-row select { cursor: pointer; }
 
 .feedback {
   margin-top: calc(12 * var(--u));
@@ -1026,7 +1027,7 @@ body[data-fit] :is(.brand p, .swap-hint) { display: none; }
 
 body:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) .brand h1 { font-size: 19px; }
 body:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) .expression { font-size: 19px; }
-body:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) .answer-row input { font-size: 17px; }
+body:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) .answer-row :is(input, select) { font-size: 17px; }
 body:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) .practice-scores strong { font-size: 17px; }
 body:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) :is(.turn-status, .practice-target, .feedback) { font-size: 13px; }
 body:is([data-fit="2"], [data-fit="3"], [data-fit="4"]) .log { font-size: 12.5px; }

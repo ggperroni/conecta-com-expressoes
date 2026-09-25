@@ -22,8 +22,13 @@ na vertical ou em qualquer diagonal.
    vez cada.
 2. Escolha duas operações entre `+ − × ÷ ^` (podem repetir) e um dos dois
    agrupamentos: `(a ∘ b) ∘ c` ou `a ∘ (b ∘ c)`.
-3. Calcule de cabeça e digite o resultado. Certo, e com a casa livre, a peça é
-   colocada nela.
+3. Calcule de cabeça e digite o resultado — em telas de toque, escolha-o numa
+   lista com as casas ainda livres, para o teclado virtual não cobrir o
+   tabuleiro. Certo, e com a casa livre, a peça é colocada nela.
+
+Se nenhuma expressão possível com os dados sorteados alcança uma casa livre, a
+rolagem não vale: o jogador rola de novo, quantas vezes for preciso, sem perder
+a vez nem gastar tentativa.
 
 **As três tentativas** — cada turno dá três tentativas sobre a *mesma* rolagem.
 Uma tentativa é consumida quando o resultado digitado não é o valor da expressão,
@@ -39,9 +44,9 @@ Na Partida, um erro **não** revela o valor correto — a conta é do jogador.
 abre: pensar antes de rolar é de graça. O tempo vale para as três tentativas
 juntas e pausa enquanto qualquer janela está aberta, de modo que consultar as
 regras ou as frequências não custa turno. Esgotado, o turno passa sem peça, como
-se as tentativas tivessem acabado. O padrão são 90 segundos; `0` desliga o
-limite. No Treino o mesmo mostrador vira um cronômetro crescente, que só informa
-o tempo gasto.
+se as tentativas tivessem acabado. A duração é de 30, 60 ou 90 segundos, com
+90 por padrão. No Treino o mesmo mostrador vira um cronômetro crescente, que só
+informa o tempo gasto.
 
 **Tamanho do tabuleiro** — de 6 × 6 a 9 × 9. Os tamanhos menores são recortes
 quadrados **centrados** na figura do artigo: o zero, que fica no centro, aparece
@@ -119,8 +124,8 @@ rolar para ver tudo.
 ## Ajustes
 
 - **Tamanho do tabuleiro** — 6 × 6, 7 × 7, 8 × 8 ou 9 × 9 (padrão, o do artigo).
-- **Tentativas por turno** (padrão 3).
-- **Tempo por turno** em segundos (padrão 90; `0` joga sem limite). Um novo valor
+- **Tentativas por turno** — 1, 2 ou 3 (padrão 3).
+- **Tempo por turno** — 30, 60 ou 90 segundos (padrão 90). Um novo valor
   vale já para o turno em andamento.
 - **Permitir usar os dados em qualquer ordem** (padrão ligado). Três dados sobre
   a mesa não têm ordem, então por omissão eles podem ser rearranjados na

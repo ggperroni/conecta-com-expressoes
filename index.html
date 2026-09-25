@@ -149,6 +149,9 @@
       <form class="answer-row" id="answer-form" autocomplete="off">
         <label for="answer">Resultado</label>
         <input type="text" id="answer" inputmode="text" placeholder="?" aria-describedby="feedback" disabled>
+        <!-- Em telas de toque o resultado é escolhido aqui, entre as casas livres,
+             em vez de digitado: o teclado virtual esconderia o tabuleiro. -->
+        <select id="answer-select" aria-label="Resultado" aria-describedby="feedback" disabled hidden></select>
         <button type="submit" class="primary-btn" id="btn-check" disabled>Conferir</button>
       </form>
 
@@ -196,9 +199,11 @@
           usados uma única vez.</li>
       <li>Escolha <strong>duas operações</strong> entre + − × ÷ ^ (podem ser iguais) e uma das duas formas de
           agrupamento: ( <em>a</em> ∘ <em>b</em> ) ∘ <em>c</em> ou <em>a</em> ∘ ( <em>b</em> ∘ <em>c</em> ).</li>
-      <li>Calcule o resultado e digite-o. Se estiver certo e a casa correspondente estiver livre, sua peça
-          é colocada nela.</li>
+      <li>Calcule o resultado e digite-o — em telas de toque, escolha-o na lista das casas livres. Se estiver
+          certo e a casa correspondente estiver livre, sua peça é colocada nela.</li>
     </ol>
+    <p>Se nenhuma expressão possível com os dados sorteados alcança uma casa livre, a rolagem não vale:
+       o jogador rola de novo, quantas vezes for preciso, sem perder a vez nem gastar tentativa.</p>
 
     <h3>As três tentativas</h3>
     <p>Cada turno dá <strong>três tentativas</strong> com a mesma rolagem. Uma tentativa é consumida quando:</p>
@@ -214,8 +219,8 @@
     <h3>O cronômetro</h3>
     <p>O tempo do turno começa a contar quando os dados param e vale para as três tentativas juntas. Ele pausa
        enquanto qualquer janela está aberta — consultar as regras não custa tempo. Se o tempo acabar, o turno
-       passa sem peça, como se as tentativas tivessem se esgotado. A duração fica em <em>Ajustes</em>, e o
-       valor <strong>0</strong> desliga o cronômetro.</p>
+       passa sem peça, como se as tentativas tivessem se esgotado. A duração — 30, 60 ou 90 segundos — fica
+       em <em>Ajustes</em>.</p>
 
     <h3>Expressões definidas</h3>
     <p>Não são permitidas divisões por zero. A potenciação exige expoente inteiro: 2 ^ (5 ÷ 2) não é uma
@@ -282,16 +287,24 @@
 
     <div class="setting">
       <label for="set-attempts">Tentativas por turno</label>
-      <input type="number" id="set-attempts" min="1" max="9" step="1" value="3">
+      <select id="set-attempts">
+        <option value="1">1 tentativa</option>
+        <option value="2">2 tentativas</option>
+        <option value="3" selected>3 tentativas</option>
+      </select>
       <p class="setting-note">O padrão são três tentativas por rolagem.</p>
     </div>
 
     <div class="setting">
-      <label for="set-timer">Tempo por turno (segundos)</label>
-      <input type="number" id="set-timer" min="0" max="600" step="5" value="90">
+      <label for="set-timer">Tempo por turno</label>
+      <select id="set-timer">
+        <option value="30">30 segundos</option>
+        <option value="60">60 segundos</option>
+        <option value="90" selected>90 segundos</option>
+      </select>
       <p class="setting-note">O cronômetro começa quando os dados param e pausa enquanto uma janela está
-         aberta. Esgotado o tempo, o turno passa sem peça. Use <strong>0</strong> para jogar sem limite. No
-         Treino ele apenas marca o tempo decorrido, sem encerrar nada.</p>
+         aberta. Esgotado o tempo, o turno passa sem peça. No Treino ele apenas marca o tempo decorrido,
+         sem encerrar nada.</p>
     </div>
 
     <div class="setting">
