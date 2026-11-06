@@ -2,14 +2,21 @@
  * Gera .shot.html: index.html com um roteiro que deixa a interface num estado
  * específico, para inspeção visual com --screenshot.
  *
- *   node test/make-shot.js match|small|practice [dark]
+ *   node test/make-shot.js menu|help|stats|match|small|practice [dark]
  */
 var fs = require('fs');
 var path = require('path');
 
 var scenes = {
+  // O menu, tal como a página abre.
+  menu: ``,
+  // A Ajuda aberta sobre o menu, com as figuras do tabuleiro.
+  help: `
+    click('#menu-help');
+  `,
   // Partida em andamento: peças dos dois jogadores e um turno com tentativa gasta.
   match: `
+    click('#menu-match');
     await play([2, 3, 2], 'L', '×', '×', '12');
     await play([1, 2, 3], 'R', '×', '×', '6');
     await play([1, 1, 1], 'L', '+', '−', '1');
@@ -22,6 +29,7 @@ var scenes = {
   `,
   // Tabuleiro 6 × 6: recorte central da figura, com o cronômetro em contagem.
   small: `
+    click('#menu-match');
     setNumber('#set-board-size', 6);
     await sleep(60);
     await play([1, 2, 3], 'R', '×', '×', '6');
@@ -31,9 +39,31 @@ var scenes = {
     pickOp(1, '×');
     pickOp(2, '+');
   `,
+  // Estatísticas depois de algumas jogadas: acertos, erros de cada tipo e um turno perdido.
+  stats: `
+    click('#menu-match');
+    await play([2, 3, 2], 'L', '×', '×', '12');
+    await play([2, 3, 4], 'L', '+', '×', '14');     // erro de ordem das operações
+    answer('20');
+    await play([1, 2, 3], 'R', '×', '×', '6');
+    await play([1, 3, 1], 'L', '−', '×', '2');      // erro de sinal: (1 − 3) × 1 = −2
+    answer('-2');
+    await play([4, 3, 3], 'R', '÷', '−', '0');      // 4 ÷ (3 − 3): indefinida
+    pickGrouping('L');
+    answer('7');                                    // (4 ÷ 3) − 3 = −5/3: outro erro
+    answer('1');                                    // de novo errado → turno esgotado
+    click('#btn-pass');
+    await play([2, 3, 1], 'L', '+', '×', '5');
+    await play([1, 3, 4], 'R', '+', '^', '2');      // outro erro: 1 + (3 ^ 4) = 82
+    answer('82');
+    click('#menu-practice');
+    await play([2, 3, 4], 'L', '^', '+', '12');
+    await play([2, 3, 4], 'L', '^', '÷', '2');
+    $$('[data-dialog="stats"]')[0].click();
+  `,
   // Treino: casas alcançáveis destacadas, um acerto marcado e um erro contado.
   practice: `
-    click('.mode-btn[data-mode="practice"]');
+    click('#menu-practice');
     await roll(2, 3, 4);
     pickGrouping('L');
     pickOp(1, '+');
@@ -44,7 +74,7 @@ var scenes = {
 };
 
 var scene = process.argv[2] || 'match';
-if (!scenes[scene]) {
+if (!Object.prototype.hasOwnProperty.call(scenes, scene)) {
   console.error('cena desconhecida: ' + scene + ' (use ' + Object.keys(scenes).join(' ou ') + ')');
   process.exit(1);
 }
@@ -59,7 +89,10 @@ var driver = `<script>
 (function () {
   'use strict';
   // Corre antes de init(): a cena parte sempre dos ajustes padrão.
-  try { localStorage.removeItem('conecta-com-expressoes:ajustes'); } catch (error) { /* sem storage */ }
+  try {
+    localStorage.removeItem('conecta-com-expressoes:ajustes');
+    localStorage.removeItem('conecta-com-expressoes:registros');
+  } catch (error) { /* sem storage */ }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function $(s) { return document.querySelector(s); }
   function $$(s) { return Array.prototype.slice.call(document.querySelectorAll(s)); }

@@ -18,6 +18,7 @@
   // --------------------------------------------------------------- estado
 
   var state = {
+    screen: 'menu',         // menu | game — a tela à vista; o menu é a porta de entrada
     mode: 'match',
     phase: 'idle',          // idle | building | turnEnd | over
     settings: {
@@ -46,6 +47,8 @@
     log: [],
     marks: new Set(),       // casas conquistadas no Treino ("linha,coluna")
     practice: { hits: 0, misses: 0, target: null },
+    events: [],             // registros de uso (ver js/stats.js), persistidos no localStorage
+    rollAttempts: 0,        // tentativas já conferidas nesta rolagem, para numerar os registros
 
     /**
      * Cronômetro do turno, disparado quando os dados param. Na Partida conta
@@ -70,17 +73,25 @@
      'set-highlight', 'set-name-1', 'set-name-2', 'btn-restart', 'board-sub', 'board-title',
      'set-board-size', 'set-timer', 'set-theme', 'btn-theme', 'timer', 'timer-bar', 'timer-fill',
      'result-kicker', 'result-title', 'result-detail', 'btn-result-close',
-     'btn-result-restart'].forEach(function (id) {
+     'btn-result-restart', 'btn-menu', 'menu-dice', 'menu-badge-practice',
+     'menu-badge-match', 'stats-scope', 'stats-count', 'btn-stats-copy', 'btn-stats-clear',
+     'stats-empty', 'stats-body', 'stats-tiles', 'stats-ops', 'stats-pairs', 'stats-grouping',
+     'stats-outcomes', 'stats-turns', 'stats-misskinds', 'stats-hardest', 'stats-bands',
+     'stats-played'].forEach(function (id) {
       el[id] = grab(id);
     });
     el.groupingInputs = Array.prototype.slice.call(document.querySelectorAll('input[name="grouping"]'));
     el.groupingFieldset = document.querySelector('.grouping');
     el.panel = document.querySelector('.panel');
+    // Há um botão de tema no menu e outro na barra do jogo; os dois são o mesmo.
+    el.themeButtons = Array.prototype.slice.call(document.querySelectorAll('.theme-btn'));
+    el.menuModes = Array.prototype.slice.call(document.querySelectorAll('[data-menu-mode]'));
     el.dialogs = {
       rules: grab('dialog-rules'),
       frequencies: grab('dialog-frequencies'),
       settings: grab('dialog-settings'),
       possibilities: grab('dialog-possibilities'),
+      stats: grab('dialog-stats'),
       result: grab('dialog-result')
     };
     el.cells = [];
@@ -276,7 +287,7 @@
 
   /*
    * O botão do alto fixa um dos dois temas; o automático, que segue o sistema,
-   * fica em Ajustes. Os dois caminhos passam por aqui, de modo que o seletor e a
+   * fica em Opções. Os dois caminhos passam por aqui, de modo que o seletor e a
    * preferência guardada nunca discordem do que está na tela.
    */
   function setTheme(preference) {
@@ -294,8 +305,62 @@
      precisa da frase inteira. */
   function renderTheme() {
     var target = Theme.current() === 'dark' ? 'claro' : 'escuro';
-    el['btn-theme'].setAttribute('aria-label', 'Mudar para o tema ' + target);
-    el['btn-theme'].title = 'Mudar para o tema ' + target;
+    el.themeButtons.forEach(function (btn) {
+      btn.setAttribute('aria-label', 'Mudar para o tema ' + target);
+      btn.title = 'Mudar para o tema ' + target;
+    });
+  }
+
+  // --------------------------------------------------------------------- menu
+
+  /*
+   * O menu é a porta de entrada e também a saída: dele se escolhe o modo — um
+   * jogador (Treino) ou dois (Partida) — e a ele se volta pelo botão da barra.
+   * Voltar não encerra nada: o estado do jogo fica como estava, o cronômetro
+   * pausa como se uma janela estivesse aberta, e escolher o mesmo modo de novo
+   * retoma de onde parou. Escolher o outro modo troca de modo como a barra do
+   * jogo já trocava.
+   */
+  function showMenu() {
+    state.screen = 'menu';
+    document.body.dataset.screen = 'menu';
+    pauseTimer();
+    renderMenu();
+    el.menuModes[0].focus();
+  }
+
+  function enterGame(mode) {
+    state.screen = 'game';
+    document.body.dataset.screen = 'game';
+    if (state.mode !== mode) setMode(mode);
+    else render();
+    // Uma partida já encerrada não é retomada: "Dois jogadores" começa outra.
+    if (mode === 'match' && state.result) resetGame();
+    if (!anyDialogOpen()) resumeTimer();
+    // O jogo estava fora do fluxo, sem medida: o encaixe se refaz agora que ele
+    // tem tamanho, sem esperar a vigia.
+    fitToViewport();
+  }
+
+  /** Um aviso de "em andamento" em cada modo que tem progresso a retomar. */
+  function renderMenu() {
+    var matchStarted = state.counts[1] + state.counts[2] > 0 && !state.result;
+    var practiceStarted = state.marks.size > 0 || state.practice.hits + state.practice.misses > 0;
+    el['menu-badge-match'].hidden = !matchStarted;
+    el['menu-badge-practice'].hidden = !practiceStarted;
+  }
+
+  /** Três dados de enfeite no alto do menu, os mesmos do exemplo da Ajuda. */
+  function renderMenuDice() {
+    el['menu-dice'].textContent = '';
+    Help.SCENES.move.dice.forEach(function (face) { el['menu-dice'].appendChild(renderDie(face)); });
+  }
+
+  /** As figuras da Ajuda, desenhadas por help.js onde o HTML as marca. */
+  function mountHelp() {
+    document.querySelectorAll('[data-help]').forEach(function (host) {
+      host.innerHTML = Help.figure(host.dataset.help);
+    });
   }
 
   // ------------------------------------------------------------ renderização
@@ -315,6 +380,7 @@
     renderControls();
     renderAnswerField();
     renderTheme();
+    renderMenu();
     scheduleFit();
   }
 
@@ -622,10 +688,11 @@
   }
 
   /**
-   * Pausa enquanto um modal está aberto: ler as regras não consome o turno.
-   * A retomada não depende do evento 'close' do <dialog> — que nem todo
-   * navegador dispara em close() — e sim de uma vigia que observa se ainda há
-   * algum modal aberto. Um cronômetro preso em pausa daria tempo infinito.
+   * Pausa enquanto um modal está aberto — ou enquanto o menu está à vista: ler
+   * as regras ou sair para o menu não consome o turno. A retomada não depende
+   * do evento 'close' do <dialog> — que nem todo navegador dispara em close() —
+   * e sim de uma vigia que observa se ainda há algo cobrindo o jogo. Um
+   * cronômetro preso em pausa daria tempo infinito.
    */
   function pauseTimer() {
     if (state.timer.mode === 'off' || state.timer.handle === null) return;
@@ -633,7 +700,7 @@
     clearInterval(state.timer.handle);
     state.timer.handle = null;
     state.timer.watch = setInterval(function () {
-      if (!anyDialogOpen()) resumeTimer();
+      if (!anyOverlayOpen()) resumeTimer();
     }, WATCH_MS);
     renderTimer();
   }
@@ -678,6 +745,7 @@
     say('Tempo esgotado para <strong>' + nameHtml(state.current) + '</strong>.', 'bad',
         'O turno passa para ' + nameOf(other(state.current)) + '.');
     addLog('Dados ' + state.dice.join('·') + ' — tempo esgotado', 'sem peça', state.current);
+    trackTurn('timeout');
     render();
   }
 
@@ -735,6 +803,7 @@
     state.op2 = null;
     state.grouping = GROUPING.LEFT;
     state.attemptsLeft = state.settings.attempts;
+    state.rollAttempts = 0;
     state.reach = Engine.reachableIntegers(state.dice, state.settings.allowReorder);
     state.phase = 'building';
     state.answerMode = prefersList() ? 'list' : 'type';
@@ -749,6 +818,7 @@
       say('Nenhuma expressão construída com <strong>' + faces.join(', ') +
           '</strong> alcança uma casa livre. Role os dados novamente: a vez continua sua.', 'warn');
       addLog('Dados ' + faces.join('·') + ' — nenhuma jogada possível', 'nova rolagem', state.current);
+      trackTurn('nomove');
     } else if (isPractice()) {
       say('Dados: <strong>' + faces.join(' · ') + '</strong>. ' + playable.size +
           ' casa(s) destacada(s) podem ser alcançadas.', null);
@@ -865,9 +935,12 @@
 
     var expressionText = currentExpressionText();
     var result = Engine.evaluate(state.slots, state.op1, state.op2, state.grouping);
+    // Cada caminho daqui para baixo é um desfecho, e todos ficam registrados.
+    function track(outcome, extra) { trackAttempt(outcome, result, typed, extra); }
 
     // 1. a expressão está matematicamente definida?
     if (!result.ok) {
+      track('undefined');
       var undefinedWhy = 'A expressão <strong>' + expressionText + '</strong> não está definida: ' +
         Engine.INVALID_MESSAGE[result.reason] + '.';
       if (isPractice()) return notePractice(undefinedWhy, 'Troque uma operação ou o agrupamento.', 'warn');
@@ -876,6 +949,7 @@
 
     // 2. o cálculo do jogador está certo?
     if (!Engine.equals(typed, result.value)) {
+      track('wrong', { mk: Stats.classifyMiss(typed, result.value, state.slots, state.op1, state.op2, state.grouping) });
       if (isPractice()) {
         state.practice.misses++;
         say('<strong>' + expressionText + '</strong> não vale ' + Engine.fracToString(typed) + '.', 'bad',
@@ -889,6 +963,7 @@
 
     // 3. o resultado corresponde a uma casa jogável?
     if (!Engine.isInteger(result.value)) {
+      track('nonint');
       return unplayable(expressionText,
         'o tabuleiro só tem casas de valor inteiro, e ' + Engine.fracToString(result.value) + ' não é inteiro',
         'resultado não inteiro');
@@ -896,21 +971,35 @@
 
     var value = Number(result.value.n);
     if (!Board.hasValue(value)) {
+      track('offboard');
       return unplayable(expressionText,
         'não existe casa com o valor ' + formatInt(value), 'valor fora do tabuleiro');
     }
 
     var cell = Board.cellOf(value);
-    if (isPractice()) return practiceHit(expressionText, value, cell);
+    if (isPractice()) {
+      track(practiceOutcome(value, cell));
+      return practiceHit(expressionText, value, cell);
+    }
 
     var owner = Board.occupant(state.board, cell.row, cell.col);
     if (owner !== null) {
+      track('occupied');
       bumpCell(cell);
       return unplayable(expressionText,
         'a casa ' + value + ' já tem uma peça de ' + nameHtml(owner), 'casa ocupada');
     }
 
+    track('placed');
     placePiece(expressionText, value, cell);
+  }
+
+  /** O desfecho de uma conta certa no Treino, nos mesmos termos de practiceHit. */
+  function practiceOutcome(value, cell) {
+    var target = state.practice.target;
+    if (target !== null && value !== target) return 'target-miss';
+    if (state.marks.has(key(cell.row, cell.col))) return 'marked';
+    return 'hit';
   }
 
   /**
@@ -949,6 +1038,7 @@
     el.answer.value = '';
     addLog('Dados ' + state.dice.join('·') + ' — ' + (logNote || 'sem jogada'),
            'sem peça', state.current);
+    trackTurn('exhausted');
     render();
   }
 
@@ -968,6 +1058,7 @@
       state.phase = 'over';
       state.result = { type: 'win', player: state.current };
       stopTimer();
+      trackGame('win');
       say('<strong>' + expressionText + ' = ' + value + '</strong>. Sequência fechada!', 'good');
       render();
       showResult('Vitória de ' + nameOf(state.current) + '!',
@@ -981,6 +1072,7 @@
       state.phase = 'over';
       state.result = { type: 'draw', player: null };
       stopTimer();
+      trackGame('draw');
       render();
       showResult('Empate', 'As ' + Board.cellCount() +
         ' casas foram preenchidas sem nenhuma sequência de quatro peças.');
@@ -1156,6 +1248,287 @@
     fill(el['freq-negative'], Engine.rankedFrequencies(function (v) { return v < 0; }).slice(0, 12));
   }
 
+  // ------------------------------------------------------------- registros
+
+  /*
+   * Cada tentativa, cada turno perdido e cada partida concluída viram um
+   * registro curto (o formato está em js/stats.js), guardado no localStorage
+   * junto com os anteriores. É dali que a janela Estatísticas lê o que a turma
+   * acerta e onde tropeça. Sem nomes: o registro diz o modo e a jogada, não
+   * quem jogou.
+   */
+  function loadEvents() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(Stats.STORAGE_KEY) || '[]');
+      state.events = Array.isArray(saved) ? saved : [];
+    } catch (error) { state.events = []; }
+  }
+
+  function saveEvents() {
+    try { localStorage.setItem(Stats.STORAGE_KEY, JSON.stringify(state.events)); }
+    catch (error) { /* armazenamento indisponível ou cheio: os registros valem só nesta sessão */ }
+  }
+
+  function recordEvent(event) {
+    state.events.push(event);
+    if (state.events.length > Stats.LIMIT) state.events.splice(0, state.events.length - Stats.LIMIT);
+    saveEvents();
+  }
+
+  /** Segundos desde que os dados pararam, descontadas as pausas. */
+  function elapsedSeconds() {
+    if (state.timer.mode === 'down') return Math.round(Math.max(0, state.settings.turnSeconds - timerSeconds()));
+    if (state.timer.mode === 'up') return Math.round(timerSeconds());
+    return null;
+  }
+
+  function trackAttempt(outcome, result, typed, extra) {
+    state.rollAttempts++;
+    var event = {
+      k: 'a', t: Date.now(), m: state.mode, z: Board.SIZE,
+      d: state.dice.slice(), s: state.slots.slice(),
+      o1: state.op1, o2: state.op2, g: state.grouping,
+      v: result.ok ? Engine.fracToString(result.value) : null,
+      x: Engine.fracToString(typed),
+      r: outcome, n: state.rollAttempts, e: elapsedSeconds()
+    };
+    if (isPractice() && state.practice.target !== null) event.tg = state.practice.target;
+    if (extra) Object.keys(extra).forEach(function (k) { event[k] = extra[k]; });
+    recordEvent(event);
+  }
+
+  /** Turno que acabou sem peça, com as casas que estavam ao alcance e livres. */
+  function trackTurn(outcome) {
+    recordEvent({
+      k: 't', t: Date.now(), m: state.mode, z: Board.SIZE, d: state.dice.slice(), r: outcome,
+      f: Array.from(playableValues()).sort(function (a, b) { return a - b; }),
+      e: elapsedSeconds()
+    });
+  }
+
+  function trackGame(outcome) {
+    recordEvent({ k: 'g', t: Date.now(), m: state.mode, z: Board.SIZE, r: outcome,
+                  mv: state.counts[1] + state.counts[2] });
+  }
+
+  // ---------------------------------------------------------- estatísticas
+
+  var OP_NAME = { '+': 'soma', '-': 'subtração', '*': 'multiplicação', '/': 'divisão', '^': 'potência' };
+
+  function clear(node) { node.textContent = ''; return node; }
+
+  function make(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  /**
+   * Uma barra horizontal: rótulo, trilho e valor na ponta. `fill` é a fração
+   * do trilho que a barra ocupa (0 a 1); `split`, quando dado, reparte a barra
+   * em conta certa e conta errada (fração errada, 0 a 1).
+   */
+  function barRow(label, fill, valueNode, split, title) {
+    var row = make('div', 'bar-row');
+    if (title) row.title = title;
+    var name = make('span', 'bar-label');
+    if (typeof label === 'string') name.textContent = label; else name.appendChild(label);
+    var track = make('div', 'bar-track');
+    var width = Math.max(0, Math.min(1, fill)) * 100;
+    if (split === undefined) {
+      var bar = make('span', 'bar-fill');
+      bar.style.width = width + '%';
+      track.appendChild(bar);
+    } else {
+      var bad = Math.max(0, Math.min(1, split));
+      if (bad < 1) {
+        var good = make('span', 'bar-fill bar-fill--good');
+        good.style.width = (width * (1 - bad)) + '%';
+        track.appendChild(good);
+      }
+      if (bad > 0) {
+        var wrong = make('span', 'bar-fill bar-fill--bad');
+        wrong.style.width = (width * bad) + '%';
+        track.appendChild(wrong);
+      }
+    }
+    var value = make('span', 'bar-value');
+    if (typeof valueNode === 'string') value.textContent = valueNode; else value.appendChild(valueNode);
+    row.appendChild(name);
+    row.appendChild(track);
+    row.appendChild(value);
+    return row;
+  }
+
+  /** "<strong>n</strong> · x% erradas" */
+  function countAndRate(count, rate, noun) {
+    var frag = document.createDocumentFragment();
+    frag.appendChild(make('strong', null, formatInt(count)));
+    frag.appendChild(document.createTextNode(' · ' + rate + '% ' + noun));
+    return frag;
+  }
+
+  function opLabel(op) {
+    var frag = document.createDocumentFragment();
+    frag.appendChild(make('span', 'op-glyph', Engine.OP_LABEL[op]));
+    frag.appendChild(document.createTextNode(OP_NAME[op]));
+    return frag;
+  }
+
+  function cellChip(value) {
+    return make('span', 'cell-chip cell-chip--' + Board.kindOf(value), String(value).replace('-', '−'));
+  }
+
+  function tile(value, label) {
+    var node = make('div', 'stat-tile');
+    node.appendChild(make('strong', null, value));
+    node.appendChild(make('span', null, label));
+    return node;
+  }
+
+  function fillTable(table, headers, rows, emptyText) {
+    clear(table);
+    var head = table.insertRow();
+    headers.forEach(function (title) { head.appendChild(make('th', null, title)); });
+    if (!rows.length) {
+      var tr = table.insertRow();
+      tr.className = 'is-empty';
+      var td = tr.insertCell();
+      td.colSpan = headers.length;
+      td.textContent = emptyText;
+      return;
+    }
+    rows.forEach(function (cells) {
+      var tr = table.insertRow();
+      cells.forEach(function (cell) {
+        var td = tr.insertCell();
+        if (cell instanceof Node) td.appendChild(cell); else td.textContent = cell;
+      });
+    });
+  }
+
+  function secsText(secs) { return secs === null || secs === undefined ? '—' : secs + ' s'; }
+  function plural(n, one, many) { return formatInt(n) + ' ' + (n === 1 ? one : many); }
+
+  function renderStats() {
+    var scope = el['stats-scope'].value;
+    var s = Stats.summarize(state.events, scope);
+    var t = s.totals;
+
+    el['stats-count'].textContent = t.events
+      ? formatInt(t.events) + ' registros' + (t.first ? ', desde ' + new Date(t.first).toLocaleDateString('pt-BR') : '')
+      : '';
+    var empty = t.attempts === 0;
+    el['stats-empty'].hidden = !empty;
+    el['stats-body'].hidden = empty;
+    el['btn-stats-copy'].disabled = state.events.length === 0;
+    el['btn-stats-clear'].disabled = state.events.length === 0;
+    if (empty) return;
+
+    // resumo
+    var tiles = clear(el['stats-tiles']);
+    tiles.appendChild(tile(formatInt(t.attempts), 'tentativas'));
+    tiles.appendChild(tile(t.calcRightRate + '%', 'contas certas'));
+    tiles.appendChild(tile(t.hitRate + '%', scope === 'practice' ? 'casas conquistadas' : 'peças colocadas'));
+    tiles.appendChild(tile(secsText(t.avgSecsToHit), 'tempo médio até acertar'));
+
+    // operações
+    var ops = clear(el['stats-ops']);
+    var maxUses = Math.max.apply(null, s.ops.map(function (row) { return row.uses; }).concat([1]));
+    s.ops.forEach(function (row) {
+      ops.appendChild(barRow(opLabel(row.op), row.uses / maxUses,
+        countAndRate(row.uses, row.errorRate, 'erradas'), row.errorRate / 100,
+        OP_NAME[row.op] + ': ' + row.uses + ' usos (' + row.share + '% das operações), ' +
+        row.errors + ' contas erradas ou indefinidas em ' + row.attempts + ' expressões'));
+    });
+    var pairs = s.pairs.slice(0, 3).map(function (row) {
+      return row.label + ' (' + row.uses + (row.errors ? ', ' + row.errorRate + '% erradas' : '') + ')';
+    });
+    el['stats-pairs'].textContent = pairs.length
+      ? 'Pares mais montados: ' + pairs.join('; ') + '.' : '';
+
+    // agrupamento
+    var grouping = clear(el['stats-grouping']);
+    var maxG = Math.max(s.grouping.L.uses, s.grouping.R.uses, 1);
+    [['L', '( a ∘ b ) ∘ c'], ['R', 'a ∘ ( b ∘ c )']].forEach(function (pair) {
+      var row = s.grouping[pair[0]];
+      grouping.appendChild(barRow(pair[1], row.uses / maxG,
+        countAndRate(row.uses, row.errorRate, 'erradas'), row.errorRate / 100,
+        row.share + '% das expressões'));
+    });
+
+    // desfechos
+    var outcomes = clear(el['stats-outcomes']);
+    var maxO = Math.max.apply(null, s.outcomes.map(function (row) { return row.count; }).concat([1]));
+    s.outcomes.forEach(function (row) {
+      outcomes.appendChild(barRow(row.label, row.count / maxO,
+        countAndRate(row.count, row.share, 'das tentativas'), undefined, row.label));
+    });
+    var turnText = t.turnsLost || t.noMoveRolls
+      ? 'Turnos sem peça: ' + s.turnOutcomes.filter(function (r) { return r.outcome !== 'nomove'; })
+          .map(function (r) { return r.count + ' por ' + r.label; }).join(', ') +
+        (t.noMoveRolls ? (t.turnsLost ? '; ' : '') + plural(t.noMoveRolls, 'rolagem sem saída', 'rolagens sem saída') : '') + '.'
+      : '';
+    if (t.games) {
+      turnText += (turnText ? ' ' : '') + 'Partidas concluídas: ' + t.games + ' (' + t.wins + ' com vitória, ' +
+        t.draws + ' empatada' + (t.draws === 1 ? '' : 's') + '), com ' + plural(t.avgMoves, 'peça', 'peças') + ' em média.';
+    }
+    el['stats-turns'].textContent = turnText;
+
+    // tipos de erro
+    var kinds = clear(el['stats-misskinds']);
+    var totalWrong = s.missKinds.reduce(function (n, row) { return n + row.count; }, 0);
+    var maxK = Math.max.apply(null, s.missKinds.map(function (row) { return row.count; }).concat([1]));
+    s.missKinds.forEach(function (row) {
+      kinds.appendChild(barRow(row.label, row.count / maxK,
+        countAndRate(row.count, row.share, 'dos erros'), undefined, row.label));
+    });
+    if (!totalWrong) kinds.appendChild(make('p', 'stats-note', 'Nenhuma conta errada até agora.'));
+
+    // números
+    fillTable(el['stats-hardest'], ['Número', 'Tentativas', 'Erros', 'Taxa de erro', 'Ficou livre', 'Tempo'],
+      s.hardest.slice(0, 10).map(function (row) {
+        return [cellChip(row.value), formatInt(row.attempts), formatInt(row.errors),
+                row.attempts ? row.errorRate + '%' : '—', formatInt(row.missed), secsText(row.avgSecs)];
+      }), 'Nenhum tropeço registrado: nem conta errada, nem casa deixada livre.');
+
+    var bands = clear(el['stats-bands']);
+    var maxB = Math.max.apply(null, s.bands.map(function (row) { return row.errors + row.missed; }).concat([1]));
+    s.bands.forEach(function (row) {
+      var frag = document.createDocumentFragment();
+      frag.appendChild(make('strong', null, formatInt(row.errors)));
+      frag.appendChild(document.createTextNode((row.errors === 1 ? ' erro · ' : ' erros · ') +
+        plural(row.missed, 'deixado livre', 'deixados livres') +
+        (row.attempts ? ' · ' + row.errorRate + '% de ' + plural(row.attempts, 'tentativa', 'tentativas') : '')));
+      bands.appendChild(barRow(row.label, (row.errors + row.missed) / maxB, frag, undefined, row.label));
+    });
+
+    fillTable(el['stats-played'], ['Número', 'Conquistas', 'Tempo'],
+      s.mostPlayed.slice(0, 8).map(function (row) {
+        return [cellChip(row.value), formatInt(row.hits), secsText(row.avgSecs)];
+      }), 'Nenhuma peça colocada ainda.');
+  }
+
+  function copyStats() {
+    var text = Stats.toCsv(state.events);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        el['btn-stats-copy'].textContent = 'Copiado!';
+        setTimeout(function () { el['btn-stats-copy'].textContent = 'Copiar CSV'; }, 1600);
+      });
+    } else {
+      window.prompt('Copie os registros:', text);
+    }
+  }
+
+  function clearStats() {
+    if (!window.confirm('Apagar todos os registros de uso guardados neste navegador?')) return;
+    state.events = [];
+    saveEvents();
+    renderStats();
+  }
+
   function showResult(title, detail) {
     el['result-kicker'].textContent = state.mode === 'match' ? 'Fim de partida' : 'Fim';
     el['result-title'].textContent = title;
@@ -1165,6 +1538,11 @@
 
   function anyDialogOpen() {
     return Object.keys(el.dialogs).some(function (name) { return el.dialogs[name].open; });
+  }
+
+  /** Algo cobre o jogo: uma janela aberta ou o próprio menu. */
+  function anyOverlayOpen() {
+    return state.screen === 'menu' || anyDialogOpen();
   }
 
   function openDialog(name) {
@@ -1377,6 +1755,7 @@
       btn.addEventListener('click', function () {
         var name = btn.dataset.dialog;
         if (name === 'frequencies') fillFrequencyTables();
+        if (name === 'stats') renderStats();
         openDialog(name);
       });
     });
@@ -1385,15 +1764,26 @@
     // deve consumir o turno.
     Object.keys(el.dialogs).forEach(function (name) {
       el.dialogs[name].addEventListener('close', function () {
-        if (!anyDialogOpen()) resumeTimer();
+        if (!anyOverlayOpen()) resumeTimer();
       });
     });
+
+    // menu: entrar num modo e voltar
+    el.menuModes.forEach(function (btn) {
+      btn.addEventListener('click', function () { enterGame(btn.dataset.menuMode); });
+    });
+    el['btn-menu'].addEventListener('click', showMenu);
+
+    // estatísticas
+    el['stats-scope'].addEventListener('change', renderStats);
+    el['btn-stats-copy'].addEventListener('click', copyStats);
+    el['btn-stats-clear'].addEventListener('click', clearStats);
 
     ['set-attempts', 'set-reorder', 'set-highlight', 'set-name-1', 'set-name-2'].forEach(function (id) {
       el[id].addEventListener('change', onSettingsChange);
       el[id].addEventListener('input', onSettingsChange);
     });
-    el['btn-theme'].addEventListener('click', toggleTheme);
+    el.themeButtons.forEach(function (btn) { btn.addEventListener('click', toggleTheme); });
     // Enquanto o tema for o automático, mudar o do sistema muda o da página.
     window.addEventListener('themechange', renderTheme);
 
@@ -1402,9 +1792,10 @@
       el[id].addEventListener('change', onSettingsChange);
     });
 
-    // atalhos: 1–5 escolhem a operação em foco no campo de resposta
+    // atalho: R rola os dados — só com o jogo à vista, nunca a partir do menu
     document.addEventListener('keydown', function (event) {
-      if (event.key === 'r' && event.target === document.body && !el['btn-roll'].disabled) rollDice();
+      if (event.key === 'r' && event.target === document.body && state.screen === 'game' &&
+          !el['btn-roll'].disabled) rollDice();
     });
 
     window.addEventListener('resize', scheduleFit);
@@ -1413,18 +1804,18 @@
   function init() {
     cacheElements();
     loadSettings();       // define o tamanho do tabuleiro antes de montá-lo
+    loadEvents();
     buildBoard();
     buildOpButtons();
     renderDice(null);
+    renderMenuDice();
+    mountHelp();
     wireEvents();
-    setModeInitial();
+    document.body.dataset.mode = state.mode;
+    document.body.dataset.screen = state.screen;   // o HTML já diz 'menu'; aqui os dois concordam
     render();
     fitToViewport();      // sem esperar o quadro: a primeira pintura já cabe
     watchPanelSize();
-  }
-
-  function setModeInitial() {
-    document.body.dataset.mode = state.mode;
   }
 
   document.addEventListener('DOMContentLoaded', init);
