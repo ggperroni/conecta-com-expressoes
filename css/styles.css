@@ -214,6 +214,103 @@ h1, h2, h3 { margin: 0; line-height: 1.25; }
 .theme-btn::after { content: "Tema escuro"; }
 :root[data-theme="dark"] .theme-btn::after { content: "Tema claro"; }
 
+/* -------------------------------------------------------------------- menu */
+
+/*
+ * Duas telas, um atributo: body[data-screen] diz qual está à vista. O menu e o
+ * jogo nunca aparecem juntos — o que não está em cena sai do fluxo (display:
+ * none), e por isso o jogo não precisa reservar espaço nem medir nada enquanto
+ * o menu está aberto. O atributo já vem escrito no HTML, para que a primeira
+ * pintura seja o menu e não um piscar do tabuleiro.
+ */
+body[data-screen="menu"] :is(.topbar, .layout) { display: none; }
+body:not([data-screen="menu"]) .menu { display: none; }
+
+.menu {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(14px, 4vh, 40px) clamp(14px, 4vw, 40px);
+  /* Numa janela muito baixa o menu rola por dentro; a página, nunca. */
+  overflow-y: auto;
+}
+
+.menu-card {
+  width: 100%;
+  max-width: 560px;
+  margin: auto 0;
+  padding: clamp(22px, 5vh, 40px) clamp(18px, 4vw, 36px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 4px);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.menu-dice { display: flex; justify-content: center; gap: 12px; margin-bottom: calc(18 * var(--u)); }
+.menu-dice .die { width: 44px; height: 44px; padding: 7px; }
+.menu-dice .pip { width: 7px; height: 7px; }
+
+.menu-card h1 { font-size: clamp(24px, 4vw, 30px); letter-spacing: -.015em; }
+.menu-tagline { margin: 6px 0 0; font-size: 15px; color: var(--ink-soft); }
+
+.menu-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: clamp(18px, 4vh, 30px);
+  text-align: left;
+}
+
+/* Cada modo é um cartão clicável: ícone, título, uma linha de explicação. */
+.menu-mode {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 16px 18px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+
+.menu-mode:hover { border-color: var(--accent); box-shadow: var(--shadow-lift); transform: translateY(-1px); }
+.menu-mode:active { transform: translateY(0); }
+
+.menu-mode-icon { display: flex; gap: 6px; height: 16px; }
+.menu-mode-text { display: flex; flex-direction: column; gap: 4px; }
+.menu-mode-title { font-size: 17px; font-weight: 700; }
+.menu-mode-sub { font-size: 13.5px; line-height: 1.4; color: var(--ink-soft); }
+
+.menu-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--good);
+  background: var(--wash-good);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.menu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: clamp(16px, 3vh, 24px);
+}
+
 /* ------------------------------------------------------------------ botões */
 
 .primary-btn,
@@ -1002,6 +1099,152 @@ h1, h2, h3 { margin: 0; line-height: 1.25; }
 .setting .check input { accent-color: var(--accent); width: 17px; height: 17px; }
 .setting-note { font-size: 13px; color: var(--ink-faint); margin: 6px 0 0; }
 
+/* ------------------------------------------------------------------- ajuda */
+
+/*
+ * As figuras da Ajuda são SVG desenhados por js/help.js com as mesmas
+ * variáveis das casas e das peças: o que o jogador vê aqui é o tabuleiro de
+ * verdade, no tema em vigor. Os estados (alcançável, alvo, conquistada,
+ * sequência) espelham os das casas reais, mais acima nesta folha.
+ */
+.modal--help { max-width: 720px; }
+
+.help-figure { margin: 12px 0 16px; text-align: center; }
+.help-figure figcaption, .help-step figcaption { font-size: 12.5px; color: var(--ink-faint); margin-top: 6px; }
+.help-figure--wide .help-board { max-width: 300px; }
+
+.help-trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 12px 0 16px; }
+.help-trio .help-figure { margin: 0; }
+
+.help-board { display: block; width: 100%; height: auto; margin: 0 auto; }
+.help-frame { fill: var(--surface); stroke: var(--line); }
+.help-cell { fill: var(--cell); stroke: var(--cell-edge); }
+.help-cell--negative { fill: var(--negative); stroke: var(--negative-edge); }
+.help-cell--zero { fill: var(--zero); stroke: var(--zero-edge); }
+.help-cell.is-reachable { stroke: var(--ring); stroke-width: 3; }
+.help-cell.is-marked { stroke: var(--good); stroke-width: 3; }
+.help-cell.is-target { stroke: var(--zero); stroke-width: 3.5; }
+
+.help-value { fill: var(--cell-ink); font-family: var(--font); font-weight: 700; font-size: 15px; pointer-events: none; }
+.help-cell--negative + .help-value, .help-cell--zero + .help-value, .help-value.is-on-piece { fill: #fff; }
+
+.help-piece--p1 { fill: var(--p1); }
+.help-piece--p2 { fill: var(--p2); }
+.help-piece.is-win { stroke: var(--ink); stroke-width: 3; }
+.help-piece.is-fresh { stroke: var(--zero); stroke-width: 3.5; }
+
+/* Uma jogada em três passos: dados → expressão → peça. */
+.help-move {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  margin: 12px 0 16px;
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.help-step { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.help-step .help-dice { width: 150px; height: auto; }
+.help-step .help-board { width: 180px; }
+
+.help-step-n {
+  width: 22px; height: 22px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.help-die { fill: var(--field); stroke: var(--line); }
+.help-pip { fill: var(--ink); }
+
+.help-expr {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  white-space: nowrap;
+}
+
+.help-expr strong { color: var(--accent); }
+
+.help-dots { display: inline-flex; gap: 4px; vertical-align: middle; margin: 0 2px; }
+
+/* ------------------------------------------------------------ estatísticas */
+
+/*
+ * Barras finas, de uma cor só quando medem quantidade; verde e vermelho só
+ * onde a barra reparte acertos e erros, e aí com legenda. O valor vai na
+ * ponta; o texto nunca veste a cor da barra.
+ */
+.modal--stats { max-width: 720px; }
+
+.stats-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.stats-bar label { font-size: 13px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .07em; }
+.stats-bar select {
+  font: inherit; font-size: 14px; padding: 6px 10px; border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm); background: var(--field); color: var(--ink);
+}
+.stats-count { font-size: 13px; color: var(--ink-faint); margin-right: auto; }
+.stats-bar .ghost-btn { padding: 6px 12px; font-size: 13px; }
+.stats-note { font-size: 13px; color: var(--ink-faint); margin: 0 0 10px; }
+.stats-empty { font-size: 14.5px; color: var(--ink-soft); padding: 18px; text-align: center;
+  background: var(--surface-2); border: 1px dashed var(--line); border-radius: var(--radius-sm); }
+
+.stat-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 8px; }
+.stat-tile { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 12px 10px; }
+.stat-tile strong { display: block; font-size: 24px; font-weight: 600; line-height: 1.15; color: var(--ink); }
+.stat-tile span { display: block; font-size: 12px; color: var(--ink-faint); margin-top: 3px; }
+
+.bars { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+
+.bar-row { display: grid; grid-template-columns: 150px 1fr auto; align-items: center; gap: 10px; font-size: 13.5px; }
+.bar-label { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-label .op-glyph { display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 6px;
+  border: 1.5px solid var(--line); border-radius: 7px; background: var(--surface-2); font-size: 14px; }
+.bar-track { position: relative; height: 14px; display: flex; gap: 2px; }
+.bar-fill { height: 100%; background: var(--accent-fill); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bar-fill--good { background: var(--good); }
+.bar-fill--bad { background: var(--bad); }
+.bar-fill--bad:last-child { border-radius: 0 4px 4px 0; }
+.bar-fill--good:not(:last-child) { border-radius: 0; }
+.bar-fill:hover { filter: brightness(1.12); }
+.bar-value { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 13px; }
+.bar-value strong { color: var(--ink); font-weight: 600; }
+
+.bars-legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-faint); margin: -2px 0 8px 160px; }
+.bars-legend .key { display: inline-block; width: 12px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.key--good { background: var(--good); }
+.key--bad { background: var(--bad); }
+
+.stats-table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; margin-bottom: 12px; }
+.stats-table th { text-align: right; font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); border-bottom: 1px solid var(--line); padding: 5px 6px; }
+.stats-table td { text-align: right; padding: 5px 6px; border-bottom: 1px solid var(--line-soft); color: var(--ink-soft); }
+.stats-table th:first-child, .stats-table td:first-child { text-align: left; }
+.stats-table td:first-child { color: var(--ink); font-weight: 700; }
+.stats-table .cell-chip { display: inline-grid; place-items: center; min-width: 34px; height: 24px; padding: 0 6px;
+  border-radius: 6px; background: var(--cell); border: 1px solid var(--cell-edge); color: var(--cell-ink); font-size: 13px; }
+.stats-table .cell-chip--negative { background: var(--negative); border-color: var(--negative-edge); color: #fff; }
+.stats-table .cell-chip--zero { background: var(--zero); border-color: var(--zero-edge); color: #fff; }
+.stats-table .is-empty td { text-align: left; color: var(--ink-faint); font-weight: 400; }
+
+@media (max-width: 560px) {
+  .stat-tiles { grid-template-columns: 1fr 1fr; }
+  .bar-row { grid-template-columns: 104px 1fr auto; }
+  .bars-legend { margin-left: 0; }
+}
+
 .modal--result { max-width: 440px; text-align: center; }
 .result-body { padding: 30px 26px; }
 .result-kicker { font-size: 11.5px; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-faint); margin-bottom: 6px; }
@@ -1079,8 +1322,12 @@ body[data-fit="4"] .log-card { display: none; }
 @media (max-width: 560px) {
   .mode-switch { margin-left: 0; }
   .brand h1 { font-size: 19px; }
-  .freq-tables, .op-picker, .grouping, .turn-players { grid-template-columns: 1fr; }
+  .freq-tables, .op-picker, .grouping, .turn-players, .menu-modes { grid-template-columns: 1fr; }
   .expression { font-size: 19px; }
+  /* Os três passos da jogada empilham; as três direções de vitória cabem lado a lado. */
+  .help-move { grid-template-columns: 1fr; }
+  .help-trio { gap: 8px; }
+  .help-trio .help-value { font-size: 17px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

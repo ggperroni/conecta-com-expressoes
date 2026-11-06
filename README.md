@@ -11,6 +11,12 @@ Não há build, dependências nem servidor: **abra `index.html` no navegador**.
 open index.html
 ```
 
+A página abre num **menu**: *Um jogador* leva ao Treino, *Dois jogadores* à
+Partida, *Opções* aos ajustes e *Ajuda* às regras ilustradas. O botão *Menu*
+na barra do jogo traz de volta a qualquer momento, sem perder nada — o
+cronômetro pausa enquanto o menu está à vista, e escolher o mesmo modo de novo
+retoma de onde parou.
+
 ## O jogo
 
 **Objetivo** — formar uma sequência de quatro peças da mesma cor na horizontal,
@@ -36,7 +42,7 @@ quando a expressão não está definida (divisão por zero, expoente fracionári
 ou quando o cálculo está certo mas não existe casa com aquele valor ou a casa já
 está ocupada. Esgotadas as três, o turno passa sem peça. Escolher operações ou
 enviar o campo em branco não consome tentativa. O número de tentativas é
-configurável em *Ajustes*.
+configurável em *Opções*.
 
 Na Partida, um erro **não** revela o valor correto — a conta é do jogador.
 
@@ -60,12 +66,68 @@ partida: as peças não têm posição equivalente noutro recorte.
 
 | Modo | Para quê |
 | --- | --- |
-| **Partida** | Dois jogadores no mesmo computador, alternando turnos, com as três tentativas valendo. |
-| **Treino** | Sem adversário e sem limite: o tabuleiro destaca as casas alcançáveis com a rolagem atual, o valor exato da expressão é sempre mostrado, e *Sortear casa-alvo* propõe a análise inversa — quais operações levam a este número? *Ver possibilidades* lista todas as expressões válidas da rolagem. |
+| **Partida** (*Dois jogadores*) | Dois jogadores no mesmo computador, alternando turnos, com as três tentativas valendo. |
+| **Treino** (*Um jogador*) | Sem adversário e sem limite: o tabuleiro destaca as casas alcançáveis com a rolagem atual, o valor exato da expressão é sempre mostrado, e *Sortear casa-alvo* propõe a análise inversa — quais operações levam a este número? *Ver possibilidades* lista todas as expressões válidas da rolagem. |
+
+O modo é escolhido no menu; a barra do jogo mantém o alternador *Partida /
+Treino* como atalho. O menu avisa, em cada modo, quando há progresso a retomar
+— e *Dois jogadores* sobre uma partida já encerrada começa outra.
+
+## Ajuda ilustrada
+
+A janela *Ajuda* resume as regras em poucos parágrafos e as ilustra com figuras
+do próprio jogo: as três direções de uma sequência vencedora, uma jogada
+inteira (dados → expressão → peça na casa) e o tabuleiro do Treino com as casas
+alcançáveis, uma casa conquistada e um alvo.
+
+As figuras não são imagens guardadas: `js/help.js` as desenha em SVG a partir
+do recorte 6 × 6 da Figura 1 — o menor, e por isso o mais legível —, com as
+mesmas variáveis de cor das casas e das peças, de modo que acompanham o tema
+claro e escuro. Cada cena é descrita por valores de casa (quais têm peça, quais
+formam a sequência, qual é o alvo), e `test/checks.js` confere que ela é uma
+situação possível: a sequência destacada é uma vitória segundo `board.js`, a
+expressão de exemplo vale o que a figura diz e as casas destacadas são as que
+o motor alcança com aquela rolagem.
+
+## Estatísticas
+
+A janela *Estatísticas* — no menu e na barra do jogo — mostra onde a turma
+acerta e onde tropeça. O jogo anota, neste navegador, **cada tentativa**
+(dados, operações, agrupamento, valor certo, valor digitado, desfecho e segundos
+desde que os dados pararam), **cada turno perdido** — com as casas que estavam
+alcançáveis e livres naquele momento — e **cada partida concluída**. Não há
+servidor nem nomes: os registros ficam no `localStorage`, dizem o modo e a
+jogada, não quem jogou, e *Copiar CSV* leva tudo para uma planilha (separador
+`;`, o do Excel em português).
+
+O que a janela responde, com um filtro Tudo / Partida / Treino que vale para
+todos os números:
+
+- **Operações** — quantas vezes cada uma entrou numa expressão e em que parte
+  dessas vezes a conta saiu errada ou indefinida; os pares mais montados; o uso
+  de cada agrupamento.
+- **Como as tentativas terminaram** — peça colocada, cálculo errado, expressão
+  indefinida, resultado não inteiro, número sem casa, casa ocupada; turnos
+  perdidos por tentativas ou por tempo; rolagens sem saída; partidas concluídas.
+- **Quando a conta sai errada** — o erro é classificado: se o valor digitado é o
+  da mesma expressão com o *outro* agrupamento, o jogador ignorou os parênteses
+  (ordem das operações); se é o simétrico do certo, foi de sinal; o resto é
+  "outro".
+- **Números mais difíceis** — os que mais saíram errados na conta ou ficaram
+  alcançáveis e livres em turnos sem peça, com taxa de erro e tempo médio até
+  acertar; a mesma leitura por faixa (negativos, zero, 1 a 20, 21 a 50, acima
+  de 50); e as casas mais conquistadas.
+
+Quem agrega e classifica é `js/stats.js`, que não toca no DOM e é conferido em
+`test/checks.js`; `game.js` só anota e desenha. Os gráficos são barras finas em
+HTML — uma cor para quantidade, verde e vermelho só onde a barra reparte contas
+certas e erradas, com o valor escrito na ponta —, e tudo que está num gráfico
+está também em texto ou tabela. Ficam guardados até 4 000 registros; os mais
+antigos saem primeiro.
 
 ## Tema claro e escuro
 
-O botão no alto da tela alterna os dois temas; em *Ajustes* há um terceiro
+O botão no alto da tela alterna os dois temas; em *Opções* há um terceiro
 valor, **Automático**, que segue a preferência do sistema — inclusive se ela
 mudar com a página aberta. A escolha fica em `localStorage`, junto dos outros
 ajustes.
@@ -121,7 +183,7 @@ Abaixo de 900 px de largura não há como manter duas colunas: a interface empil
 e passa a rolar por dentro da área de jogo — nada fica cortado, mas aí é preciso
 rolar para ver tudo.
 
-## Ajustes
+## Opções
 
 - **Tamanho do tabuleiro** — 6 × 6, 7 × 7, 8 × 8 ou 9 × 9 (padrão, o do artigo).
 - **Tentativas por turno** — 1, 2 ou 3 (padrão 3).
@@ -141,19 +203,21 @@ As preferências ficam em `localStorage`.
 ## Arquivos
 
 ```
-index.html        estrutura e modais (regras, frequências, ajustes, possibilidades, resultado)
+index.html        menu, estrutura do jogo e modais (ajuda, frequências, estatísticas, opções, possibilidades, resultado)
 favicon.svg       ícone da aba: a face 5 de um dado, nos dois temas
 favicon.png       o mesmo desenho a 32 × 32, para quem não aceita ícone em SVG
-css/styles.css    folha única; paletas clara e escura, e os degraus de encaixe
+css/styles.css    folha única; paletas clara e escura, menu, figuras da ajuda e os degraus de encaixe
 js/theme.js       resolve o tema antes da primeira pintura
 js/engine.js      aritmética exata, validade e enumeração das expressões
 js/board.js       os 81 valores da Figura 1, os recortes 6–9 e a detecção de sequências
-js/game.js        estado, turnos, tentativas, cronômetro, encaixe na janela
+js/help.js        as figuras da Ajuda, desenhadas em SVG a partir do tabuleiro
+js/stats.js       agrega e classifica os registros de uso; exporta CSV
+js/game.js        menu, estado, turnos, tentativas, cronômetro, registros, encaixe na janela
 test/             verificações em Node e roteiro de interface em Chrome headless
 ```
 
-`engine.js` e `board.js` não dependem do DOM e carregam tanto no navegador
-quanto em Node.
+`engine.js`, `board.js`, `help.js` e `stats.js` não dependem do DOM e carregam
+tanto no navegador quanto em Node.
 
 ## Matemática
 
@@ -194,12 +258,13 @@ da Figura 1.
 ## Testes
 
 ```
-node test/checks.js                    # motor, tabuleiro, recortes e detecção de vitória
+node test/checks.js                    # motor, tabuleiro, recortes, vitória, figuras da ajuda e estatísticas
 ```
 
-Interface, em Chrome headless (dirige a página como um jogador: rola, escolhe
-operações, digita resultados, deixa o tempo acabar, troca o tamanho do tabuleiro,
-joga uma partida até a vitória e confere que nada fica cortado na janela):
+Interface, em Chrome headless (dirige a página como um jogador: entra pelo menu,
+rola, escolhe operações, digita resultados, deixa o tempo acabar, volta ao menu
+e retoma, troca o tamanho do tabuleiro, joga uma partida até a vitória e confere
+que nada fica cortado na janela):
 
 ```
 node test/make-smoke.js
@@ -219,8 +284,9 @@ segundos de jogo. Se o shell já correr dentro de um sandbox, acrescente
 `--no-sandbox` — o sandbox do Chrome não inicializa aninhado e o processo morre
 sem produzir DOM.
 
-Para inspeção visual, `node test/make-shot.js match|small|practice [dark]` gera
-`.shot.html` já num estado de jogo e no tema pedido, pronto para `--screenshot`.
+Para inspeção visual, `node test/make-shot.js menu|help|stats|match|small|practice [dark]`
+gera `.shot.html` já numa tela ou estado de jogo e no tema pedido, pronto para
+`--screenshot`.
 O tema entra fixo, e não por alternância, porque o Chrome headless se declara
 escuro: alternar deixaria a foto clara justo quando se pediu a escura. Acrescente
 `--force-prefers-reduced-motion`: sob `--virtual-time-budget` o relógio das

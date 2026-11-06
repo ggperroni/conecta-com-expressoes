@@ -16,7 +16,10 @@
 
   // Este roteiro corre antes de init(): limpar os ajustes garante que o teste
   // parta sempre dos padrões, e não de preferências de uma execução anterior.
-  try { localStorage.removeItem('conecta-com-expressoes:ajustes'); } catch (error) { /* sem storage */ }
+  try {
+    localStorage.removeItem('conecta-com-expressoes:ajustes');
+    localStorage.removeItem('conecta-com-expressoes:registros');
+  } catch (error) { /* sem storage */ }
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function $(selector) { return document.querySelector(selector); }
@@ -26,7 +29,7 @@
     return $$('.cell').filter(function (c) { return Number(c.dataset.value) === value; })[0];
   }
   function feedbackText() { return $('#feedback').textContent; }
-  function spentAttempts() { return $$('.attempt-dot.is-spent').length; }
+  function spentAttempts() { return $$('#attempts .attempt-dot.is-spent').length; }
 
   /** Faz a próxima rolagem cair em (a, b, c). */
   function forceDice(a, b, c) {
@@ -86,6 +89,71 @@
   }
 
   async function run() {
+    // ----------------------------------------------------------------- menu
+    /* A página abre no menu, com o jogo fora de cena. Só depois de escolher o
+       número de jogadores é que o tabuleiro aparece. */
+    function shown(selector) { return getComputedStyle($(selector)).display !== 'none'; }
+    ok('a página abre no menu', document.body.dataset.screen === 'menu', document.body.dataset.screen);
+    ok('o menu está à vista', shown('#menu'), 'menu oculto');
+    ok('o jogo fica fora de cena no menu', !shown('.layout') && !shown('.topbar'), 'jogo visível');
+    ok('o menu oferece um e dois jogadores',
+      $('#menu-practice').dataset.menuMode === 'practice' && $('#menu-match').dataset.menuMode === 'match',
+      'botões de modo ausentes');
+    ok('o menu tem Opções e Ajuda',
+      $('#menu-options').dataset.dialog === 'settings' && $('#menu-help').dataset.dialog === 'rules',
+      'botões ausentes');
+    ok('o menu mostra três dados', $$('#menu-dice .die').length === 3, $$('#menu-dice .die').length + '');
+    ok('o menu cabe na janela', document.documentElement.scrollHeight <= innerHeight + 1,
+      document.documentElement.scrollHeight + ' > ' + innerHeight);
+    ok('a tecla R não rola a partir do menu', (function () {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+      return $$('#dice .die--empty').length === 3;
+    })(), 'dados rolados');
+
+    $('#menu-options').click();
+    await sleep(30);
+    ok('Opções abre os ajustes a partir do menu', $('#dialog-settings').open === true, 'fechado');
+    $('#dialog-settings').close();
+    $('#menu-help').click();
+    await sleep(30);
+    ok('Ajuda abre as regras a partir do menu', $('#dialog-rules').open === true, 'fechado');
+    ok('a Ajuda traz as figuras do tabuleiro', $$('#dialog-rules svg.help-board').length === 5,
+      $$('#dialog-rules svg.help-board').length + ' tabuleiros');
+    ok('a Ajuda desenha os dados', $$('#dialog-rules svg.help-dice').length === 1,
+      $$('#dialog-rules svg.help-dice').length + '');
+    ok('as figuras mostram as três direções de vitória',
+      $$('#dialog-rules .help-trio .help-piece.is-win').length === 12,
+      $$('#dialog-rules .help-trio .help-piece.is-win').length + ' peças destacadas');
+    ok('as figuras têm texto alternativo',
+      $$('#dialog-rules svg[role="img"]').every(function (svg) { return svg.getAttribute('aria-label'); }),
+      'figura sem aria-label');
+    ok('a jogada de exemplo está escrita', /\(2 \+ 3\) × 4 = 20/.test($('#dialog-rules .help-expr').textContent),
+      $('#dialog-rules .help-expr').textContent);
+    $('#dialog-rules').close();
+    $('#menu-stats').click();
+    await sleep(30);
+    ok('Estatísticas abre a partir do menu', $('#dialog-stats').open === true, 'fechado');
+    ok('sem registros, a janela avisa que está vazia',
+      $('#stats-empty').hidden === false && $('#stats-body').hidden === true, 'corpo à vista');
+    ok('sem registros, copiar e limpar ficam bloqueados',
+      $('#btn-stats-copy').disabled && $('#btn-stats-clear').disabled, 'liberados');
+    $('#dialog-stats').close();
+
+    $('#menu-practice').click();
+    await sleep(30);
+    ok('Um jogador entra no Treino',
+      document.body.dataset.screen === 'game' && document.body.dataset.mode === 'practice',
+      document.body.dataset.screen + '/' + document.body.dataset.mode);
+    ok('o jogo entra em cena', shown('.layout') && shown('.topbar') && !shown('#menu'), 'menu ainda visível');
+    $('#btn-menu').click();
+    await sleep(30);
+    ok('o botão Menu volta ao menu', document.body.dataset.screen === 'menu', document.body.dataset.screen);
+    $('#menu-match').click();
+    await sleep(30);
+    ok('Dois jogadores entra na Partida',
+      document.body.dataset.screen === 'game' && document.body.dataset.mode === 'match',
+      document.body.dataset.screen + '/' + document.body.dataset.mode);
+
     // ------------------------------------------------ montagem da página
     ok('81 casas renderizadas', $$('.cell').length === 81, $$('.cell').length + ' casas');
     ok('zero no centro', cellOf(0) && cellOf(0).dataset.row === '4' && cellOf(0).dataset.col === '4',
@@ -103,8 +171,8 @@
     await roll(2, 3, 4);
     ok('dados caíram em 2, 3 e 4', diceFaces().join(',') === '2,3,4', diceFaces().join(','));
     ok('campo de resposta liberado após rolar', $('#answer').disabled === false, 'bloqueado');
-    ok('três tentativas disponíveis', $$('.attempt-dot').length === 3 && spentAttempts() === 0,
-      $$('.attempt-dot').length + ' pontos, ' + spentAttempts() + ' gastos');
+    ok('três tentativas disponíveis', $$('#attempts .attempt-dot').length === 3 && spentAttempts() === 0,
+      $$('#attempts .attempt-dot').length + ' pontos, ' + spentAttempts() + ' gastos');
     ok('rolar novamente está bloqueado no mesmo turno', $('#btn-roll').disabled === true, 'liberado');
 
     // ------------------------------------------ conferir sem escolher operações
@@ -204,6 +272,19 @@
     ok('cronômetro retoma ao fechar o modal', $('#timer').textContent !== paused,
       'ainda parado em ' + paused);
 
+    // o menu pausa como uma janela, e retomar o mesmo modo continua o turno
+    $('#btn-menu').click();
+    await sleep(30);
+    var inMenu = $('#timer').textContent;
+    await sleep(4000);
+    ok('cronômetro pausa no menu', $('#timer').textContent === inMenu, inMenu + ' → ' + $('#timer').textContent);
+    ok('o menu avisa da partida em andamento', $('#menu-badge-match').hidden === false, 'sem aviso');
+    $('#menu-match').click();
+    await sleep(1200);
+    ok('voltar do menu retoma o turno', $('#timer').textContent !== inMenu, 'ainda parado em ' + inMenu);
+    ok('voltar do menu mantém os dados', diceFaces().join(',') === '4,3,3', diceFaces().join(','));
+    ok('voltar do menu mantém a tentativa gasta', spentAttempts() === 1, spentAttempts() + ' gastas');
+
     // tempo esgotado encerra o turno
     ok('o tempo só oferece 30, 60 ou 90 segundos',
       $$('#set-timer option').map(function (o) { return o.value; }).join(',') === '30,60,90',
@@ -256,7 +337,26 @@
       [12, 1, -2, 13].every(function (v) { return cellOf(v).classList.contains('is-win'); }),
       'casas destacadas divergem');
 
-    $('#btn-result-restart').click();
+    /* Com peças no tabuleiro o menu avisa que há partida em andamento — mas
+       uma partida encerrada não é retomada: "Dois jogadores" começa outra. */
+    $('#btn-result-close').click();
+    await sleep(30);
+    $('#btn-menu').click();
+    await sleep(30);
+    ok('partida encerrada não aparece como em andamento', $('#menu-badge-match').hidden === true, 'aviso à vista');
+    $('#menu-match').click();
+    await sleep(60);
+    ok('Dois jogadores começa partida nova após o fim', $$('.cell.is-taken').length === 0,
+      $$('.cell.is-taken').length + ' peças');
+
+    await play([2, 3, 2], 'L', '×', '×', '12');
+    $('#btn-menu').click();
+    await sleep(30);
+    ok('o menu avisa da partida em andamento', $('#menu-badge-match').hidden === false, 'sem aviso');
+    $('#menu-match').click();
+    await sleep(30);
+    ok('partida em andamento é retomada', cellOf(12).dataset.owner === '1', 'tabuleiro limpo');
+    $('#btn-restart').click();
     await sleep(60);
     ok('nova partida limpa o tabuleiro', $$('.cell.is-taken').length === 0, $$('.cell.is-taken').length + '');
 
@@ -293,6 +393,13 @@
     ok('alvo sorteado é alcançável', $$('.cell.is-target')[0].classList.contains('is-reachable'),
       'alvo ' + target + ' não alcançável');
 
+    $('#btn-menu').click();
+    await sleep(30);
+    ok('o menu avisa do treino em andamento', $('#menu-badge-practice').hidden === false, 'sem aviso');
+    $('#menu-practice').click();
+    await sleep(30);
+    ok('voltar ao Treino mantém a casa conquistada', cellOf(20).classList.contains('is-marked'), cellOf(20).className);
+
     $('#btn-clear-marks').click();
     await sleep(30);
     ok('limpar marcas funciona', $$('.cell.is-marked').length === 0, $$('.cell.is-marked').length + '');
@@ -302,6 +409,103 @@
     ok('lista de possibilidades abre', $('#dialog-possibilities').open === true, 'fechada');
     ok('lista traz expressões', $$('#poss-list .poss-row').length > 0, 'vazia');
     $('#dialog-possibilities').close();
+
+    // ------------------------------------------------------------ estatísticas
+    /* Tudo que o roteiro jogou até aqui ficou registrado: tentativas certas e
+       erradas, uma expressão indefinida, turnos esgotados, tempo esgotado,
+       rolagens sem saída e uma partida vencida. */
+    var stored = JSON.parse(localStorage.getItem('conecta-com-expressoes:registros') || '[]');
+    ok('as jogadas ficam registradas no armazenamento', stored.length > 15, stored.length + ' registros');
+    ok('o registro anota conta errada com o tipo do erro',
+      stored.some(function (ev) { return ev.k === 'a' && ev.r === 'wrong' && ev.mk; }), 'sem erro classificado');
+    ok('14 para (2 + 3) × 4 foi classificado como erro de ordem das operações',
+      stored.some(function (ev) { return ev.r === 'wrong' && ev.x === '14' && ev.v === '20' && ev.mk === 'grouping'; }),
+      JSON.stringify(stored.filter(function (ev) { return ev.r === 'wrong'; }).slice(0, 3)));
+    ok('o registro anota a expressão indefinida',
+      stored.some(function (ev) { return ev.r === 'undefined' && ev.v === null; }), 'ausente');
+    ok('o registro anota o turno esgotado com as casas que ficaram livres',
+      stored.some(function (ev) { return ev.k === 't' && ev.r === 'exhausted' && Array.isArray(ev.f) && ev.f.length > 0; }),
+      'ausente');
+    ok('o registro anota o tempo esgotado',
+      stored.some(function (ev) { return ev.k === 't' && ev.r === 'timeout'; }), 'ausente');
+    ok('o registro anota a partida vencida',
+      stored.some(function (ev) { return ev.k === 'g' && ev.r === 'win' && ev.mv === 7; }),
+      JSON.stringify(stored.filter(function (ev) { return ev.k === 'g'; })));
+    ok('o registro anota as jogadas do Treino com o acerto',
+      stored.some(function (ev) { return ev.m === 'practice' && ev.r === 'hit' && ev.v === '20'; }), 'ausente');
+    ok('o registro traz o tempo decorrido',
+      stored.filter(function (ev) { return ev.k === 'a'; }).every(function (ev) { return typeof ev.e === 'number'; }),
+      'tentativa sem tempo');
+    ok('o registro não guarda nomes',
+      JSON.stringify(stored).indexOf('Jogador') === -1, 'nome encontrado');
+
+    $$('[data-dialog="stats"]')[0].click();
+    await sleep(30);
+    ok('Estatísticas abre a partir da barra do jogo', $('#dialog-stats').open === true, 'fechado');
+    ok('com registros, o corpo aparece', $('#stats-body').hidden === false && $('#stats-empty').hidden === true, 'vazio');
+    ok('o resumo tem quatro mostradores', $$('#stats-tiles .stat-tile').length === 4, $$('#stats-tiles .stat-tile').length + '');
+    ok('as cinco operações têm barra', $$('#stats-ops .bar-row').length === 5, $$('#stats-ops .bar-row').length + '');
+    ok('as barras das operações repartem certo e errado',
+      $$('#stats-ops .bar-fill--good').length > 0 && $$('#stats-ops .bar-fill--bad').length > 0, 'uma cor só');
+    ok('nenhuma barra passa do trilho',
+      $$('.bar-track').every(function (track) { return track.scrollWidth <= track.clientWidth + 1; }), 'barra estourou');
+    ok('o agrupamento tem duas barras', $$('#stats-grouping .bar-row').length === 2, $$('#stats-grouping .bar-row').length + '');
+    ok('os desfechos listam a conta errada', /cálculo errado/.test($('#stats-outcomes').textContent), $('#stats-outcomes').textContent);
+    ok('os tipos de erro contam a ordem das operações',
+      /ordem das operações/.test($('#stats-misskinds').textContent), $('#stats-misskinds').textContent);
+    ok('a nota dos turnos fala dos turnos perdidos e da partida',
+      /Turnos sem peça/.test($('#stats-turns').textContent) && /Partidas concluídas: 1/.test($('#stats-turns').textContent),
+      $('#stats-turns').textContent);
+    ok('a tabela dos números difíceis tem linhas', $$('#stats-hardest tr').length > 1, $$('#stats-hardest tr').length + '');
+    var troubled = new Set();
+    stored.forEach(function (ev) {
+      if (ev.k === 'a' && ev.r === 'wrong' && ev.v) troubled.add(Number(ev.v));
+      if (ev.k === 't') (ev.f || []).forEach(function (v) { troubled.add(v); });
+    });
+    ok('todo número listado como difícil saiu errado ou ficou livre',
+      $$('#stats-hardest .cell-chip').length > 0 && $$('#stats-hardest .cell-chip').every(function (chip) {
+        return troubled.has(Number(chip.textContent.replace('−', '-')));
+      }), $$('#stats-hardest .cell-chip').map(function (c) { return c.textContent; }).join(','));
+    ok('a tabela das casas conquistadas tem linhas', $$('#stats-played tr').length > 1, $$('#stats-played tr').length + '');
+    ok('o contador cita os registros', /registros/.test($('#stats-count').textContent), $('#stats-count').textContent);
+
+    var allAttempts = $$('#stats-tiles .stat-tile strong')[0].textContent;
+    setOnChange('#stats-scope', 'practice');
+    await sleep(30);
+    ok('o filtro do Treino muda os números', $$('#stats-tiles .stat-tile strong')[0].textContent !== allAttempts,
+      'mesmos ' + allAttempts);
+    ok('no Treino o mostrador fala de casas conquistadas', /casas conquistadas/.test($('#stats-tiles').textContent),
+      $('#stats-tiles').textContent);
+    setOnChange('#stats-scope', 'all');
+    await sleep(30);
+
+    var csv = Stats.toCsv(stored);
+    ok('o CSV tem uma linha por registro', csv.split('\n').length === stored.length + 1, csv.split('\n').length + ' linhas');
+    ok('o CSV começa pelo cabeçalho', csv.split('\n')[0].indexOf('tipo;instante;modo') === 0, csv.split('\n')[0]);
+
+    // Limpar pede confirmação; aqui ela é forjada, porque o Chrome headless nega.
+    var realConfirm = window.confirm;
+    window.confirm = function () { return false; };
+    $('#btn-stats-clear').click();
+    await sleep(30);
+    ok('limpar sem confirmar não apaga nada',
+      JSON.parse(localStorage.getItem('conecta-com-expressoes:registros') || '[]').length === stored.length, 'apagou');
+    window.confirm = function () { return true; };
+    $('#btn-stats-clear').click();
+    await sleep(30);
+    window.confirm = realConfirm;
+    ok('limpar apaga os registros', JSON.parse(localStorage.getItem('conecta-com-expressoes:registros') || '[]').length === 0,
+      'ainda há registros');
+    ok('depois de limpar, a janela volta a avisar que está vazia', $('#stats-empty').hidden === false, 'corpo à vista');
+    $('#dialog-stats').close();
+
+    await roll(2, 3, 4);
+    pickGrouping('L');
+    pickOp(1, '+');
+    pickOp(2, '×');
+    answer('20');
+    ok('novas jogadas voltam a ser registradas',
+      JSON.parse(localStorage.getItem('conecta-com-expressoes:registros') || '[]').length === 1, 'nada registrado');
 
     // --------------------------------------------------- tabela de frequências
     $$('[data-dialog="frequencies"]')[0].click();
@@ -377,10 +581,13 @@
       $('#btn-roll').textContent);
     ok('aviso pede nova rolagem', /Role os dados novamente/.test(feedbackText()), feedbackText());
     ok('campo de resposta segue bloqueado', $('#answer').disabled === true, 'liberado');
-    ok('sem tentativas a mostrar na rolagem sem saída', $$('.attempt-dot').length === 0,
-      $$('.attempt-dot').length + ' pontos');
+    ok('sem tentativas a mostrar na rolagem sem saída', $$('#attempts .attempt-dot').length === 0,
+      $$('#attempts .attempt-dot').length + ' pontos');
     ok('registro anota a rolagem sem saída', /nenhuma jogada possível/.test($('#log').textContent),
       $('#log').textContent);
+    ok('a rolagem sem saída fica nos registros de uso',
+      JSON.parse(localStorage.getItem('conecta-com-expressoes:registros') || '[]')
+        .some(function (ev) { return ev.k === 't' && ev.r === 'nomove' && ev.f.length === 0; }), 'ausente');
     ok('nenhuma peça a mais', $$('.cell.is-taken').length === 6, $$('.cell.is-taken').length + '');
 
     await play([2, 3, 4], 'L', '+', '×', '20');  // J1 joga na nova rolagem
@@ -474,7 +681,7 @@
     await sleep(60);
     ok('o botão leva ao outro tema', root.dataset.theme === opposite, root.dataset.theme);
     ok('o fundo da página muda com o tema', paperOf() !== systemPaper, paperOf());
-    ok('o seletor de Ajustes acompanha o botão', $('#set-theme').value === opposite, $('#set-theme').value);
+    ok('o seletor de Opções acompanha o botão', $('#set-theme').value === opposite, $('#set-theme').value);
     ok('a preferência é guardada',
       new RegExp('"theme":"' + opposite + '"').test(localStorage.getItem('conecta-com-expressoes:ajustes') || ''),
       localStorage.getItem('conecta-com-expressoes:ajustes') || 'sem ajustes');
@@ -491,9 +698,19 @@
     ok('o botão volta ao tema anterior', root.dataset.theme === fromSystem, root.dataset.theme);
     ok('o fundo volta a ser o mesmo de antes', paperOf() === systemPaper, paperOf());
 
+    // o botão de tema do menu é o mesmo botão
+    click('#menu-theme');
+    await sleep(60);
+    ok('o botão de tema do menu também troca', root.dataset.theme === opposite, root.dataset.theme);
+    ok('os dois botões de tema têm o mesmo rótulo',
+      $('#menu-theme').getAttribute('aria-label') === $('#btn-theme').getAttribute('aria-label'),
+      $('#menu-theme').getAttribute('aria-label') + ' ≠ ' + $('#btn-theme').getAttribute('aria-label'));
+    click('#menu-theme');
+    await sleep(60);
+
     setOnChange('#set-theme', opposite);
     await sleep(60);
-    ok('Ajustes também troca o tema', root.dataset.theme === opposite, root.dataset.theme);
+    ok('Opções também troca o tema', root.dataset.theme === opposite, root.dataset.theme);
     setOnChange('#set-theme', 'auto');
     await sleep(60);
     ok('o automático volta a seguir o sistema', root.dataset.theme === fromSystem, root.dataset.theme);
@@ -587,6 +804,17 @@
       while (list.children.length > entries.length) list.removeChild(list.lastChild);
       await refit();
     }
+
+    // De volta ao menu, no fim: ele também tem de caber, com o crédito à vista.
+    $('#btn-menu').click();
+    await refit();
+    ok('o menu cabe na janela ao voltar', document.documentElement.scrollHeight <= innerHeight + 1,
+      document.documentElement.scrollHeight + ' > ' + innerHeight);
+    var card = $('.menu-card').getBoundingClientRect();
+    ok('o cartão do menu está inteiro na janela', card.top >= 0 && card.bottom <= innerHeight + 1,
+      Math.round(card.top) + '..' + Math.round(card.bottom) + ' em ' + innerHeight);
+    ok('o crédito aparece sob o menu', $('.credit').getBoundingClientRect().bottom <= innerHeight + 1 &&
+      getComputedStyle($('.credit')).display !== 'none', 'crédito fora ou oculto');
 
     // ---------------------------------------------------------------- erros
     ok('nenhum erro de JavaScript', window.__smokeErrors.length === 0, window.__smokeErrors.join(' ;; '));
